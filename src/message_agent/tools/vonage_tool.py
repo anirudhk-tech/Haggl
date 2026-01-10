@@ -10,6 +10,10 @@ from ..schemas import OutgoingSMS
 
 logger = logging.getLogger(__name__)
 
+# Sandbox vs Production endpoints
+VONAGE_SANDBOX_URL = "https://messages-sandbox.nexmo.com/v1/messages"
+VONAGE_PRODUCTION_URL = "https://api.nexmo.com/v1/messages"
+
 
 def _get_vonage_config() -> tuple[str | None, str | None, str | None]:
     """Get Vonage configuration from environment."""

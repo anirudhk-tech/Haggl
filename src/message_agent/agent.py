@@ -53,11 +53,10 @@ class MessageAgent:
     
     def _get_openai_client(self):
         """Lazy initialization of OpenAI client."""
-        if self._openai_client is None:
-            # TODO: Initialize actual OpenAI client
-            # from openai import OpenAI
-            # self._openai_client = OpenAI(api_key=OPENAI_API_KEY)
-            logger.info("[STUB] OpenAI client would be initialized here")
+        if self._openai_client is None and OPENAI_API_KEY:
+            from openai import OpenAI
+            self._openai_client = OpenAI(api_key=OPENAI_API_KEY)
+            logger.info("OpenAI client initialized")
         return self._openai_client
     
     def _get_or_create_conversation(self, phone_number: str) -> ConversationState:
@@ -128,19 +127,20 @@ class MessageAgent:
             logger.warning("OPENAI_API_KEY not configured, using stub response")
             return self._stub_response(conversation)
         
-        # TODO: Implement actual OpenAI call
-        # client = self._get_openai_client()
-        # messages = [
-        #     {"role": msg.role.value, "content": msg.content}
-        #     for msg in conversation.messages
-        # ]
-        # response = client.chat.completions.create(
-        #     model=OPENAI_MODEL,
-        #     messages=messages,
-        # )
-        # return response.choices[0].message.content
-        
-        return self._stub_response(conversation)
+        try:
+            client = self._get_openai_client()
+            messages = [
+                {"role": msg.role.value, "content": msg.content}
+                for msg in conversation.messages
+            ]
+            response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.exception(f"OpenAI API error: {e}")
+            return self._stub_response(conversation)
     
     def _stub_response(self, conversation: ConversationState) -> str:
         """Generate a stub response for testing."""
