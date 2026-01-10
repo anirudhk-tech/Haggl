@@ -19,54 +19,35 @@ from calling_agent.tools.vapi_tool import (
 
 logger = logging.getLogger(__name__)
 
-# Default vendor for testing
-DEFAULT_TEST_VENDOR = VendorInfo(
-    id="test-vendor-1",
-    name="Local Farm Supply",
-    phone="+15633965540",
-    product="eggs",
-    price_per_unit=4.50,
-    unit="dozen",
-)
+# Hardcoded test phone numbers for parallel vendor calls
+TEST_VENDOR_PHONES = [
+    "+15633965540",  # Vendor 1
+    "+17203154946",  # Vendor 2
+    "+15128508061",  # Vendor 3
+]
+
+# Fallback vendor names if sourcing returns nothing (unlikely)
+FALLBACK_VENDOR_NAMES = ["Vendor A", "Vendor B", "Vendor C"]
 
 # Type for status callback
 StatusCallback = Callable[[str], Awaitable[None]]
 
 
-async def place_order_with_updates(
+async def call_single_vendor(
+    vendor: VendorInfo,
     product: str,
     quantity: int,
-    unit: str = "dozen",
-    business_name: str = "My Business",
-    vendor_phone: Optional[str] = None,
+    unit: str,
+    business_name: str,
+    vendor_index: int,
     on_status_update: Optional[StatusCallback] = None,
 ) -> dict:
     """
-    Place an order with status updates at each stage.
+    Call a single vendor and track the call through completion.
     
-    Sends updates via callback:
-    1. "Calling vendor..." - when call initiates
-    2. "Connected!" - when call connects
-    3. "Call ended - result" - when call completes
-    
-    Args:
-        product: What to order
-        quantity: How many units
-        unit: Unit of measurement
-        business_name: Business placing the order
-        vendor_phone: Override vendor phone for testing
-        on_status_update: Async callback to send status messages
-        
-    Returns:
-        dict with final order status
+    Returns dict with vendor info and call outcome.
     """
     order_id = f"order-{uuid.uuid4().hex[:8]}"
-    
-    # Use test vendor, optionally override phone
-    vendor = DEFAULT_TEST_VENDOR.model_copy()
-    if vendor_phone:
-        vendor.phone = vendor_phone
-    vendor.product = product
     
     async def send_update(message: str):
         if on_status_update:
@@ -76,9 +57,6 @@ async def place_order_with_updates(
                 logger.error(f"Failed to send status update: {e}")
     
     try:
-        # Step 1: Initiate the call
-        await send_update(f"📞 Calling vendor for {quantity} {unit} of {product}...")
-        
         call_input = CallVendorInput(
             phone_number=vendor.phone,
             vendor_name=vendor.name,
@@ -88,22 +66,23 @@ async def place_order_with_updates(
             unit=unit,
         )
         
+        logger.info(f"[Vendor {vendor_index + 1}] Calling {vendor.name} at {vendor.phone}")
         call_result = await call_vendor(call_input)
         
         if call_result.get("error"):
-            await send_update(f"❌ Couldn't reach vendor: {call_result['error']}")
+            logger.error(f"[Vendor {vendor_index + 1}] Failed to initiate: {call_result['error']}")
             return {
+                "vendor_name": vendor.name,
+                "vendor_index": vendor_index,
                 "success": False,
-                "order_id": order_id,
-                "status": "failed",
                 "error": call_result["error"],
+                "outcome": None,
             }
         
         call_id = call_result["call_id"]
-        logger.info(f"Call initiated: {call_id}")
+        logger.info(f"[Vendor {vendor_index + 1}] Call initiated: {call_id}")
         
-        # Step 2: Wait for call to connect/progress
-        connected_notified = False
+        # Wait for call completion
         elapsed = 0
         timeout = 300
         poll_interval = 3
@@ -112,75 +91,211 @@ async def place_order_with_updates(
             status = await get_call_status(call_id)
             
             if status.get("error"):
-                await send_update(f"❌ Call error: {status['error']}")
                 return {
+                    "vendor_name": vendor.name,
+                    "vendor_index": vendor_index,
                     "success": False,
-                    "order_id": order_id,
                     "call_id": call_id,
-                    "status": "failed",
                     "error": status["error"],
+                    "outcome": None,
                 }
             
-            call_status = status.get("status")
-            
-            # Notify when connected (only once)
-            if call_status in ("in-progress", "ringing") and not connected_notified:
-                await send_update("🔗 Connected! Negotiating with vendor...")
-                connected_notified = True
-            
-            # Call ended
-            if call_status == "ended":
+            if status.get("status") == "ended":
                 break
             
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
         
         if elapsed >= timeout:
-            await send_update("⏱️ Call timed out")
             return {
+                "vendor_name": vendor.name,
+                "vendor_index": vendor_index,
                 "success": False,
-                "order_id": order_id,
                 "call_id": call_id,
-                "status": "timeout",
                 "error": "Call timed out",
+                "outcome": None,
             }
         
-        # Step 3: Parse outcome and send final update
+        # Parse outcome
         final_status = await get_call_status(call_id)
         transcript = final_status.get("transcript", "")
         ended_reason = final_status.get("ended_reason")
         
-        logger.info(f"Call ended. Reason: {ended_reason}")
-        logger.info(f"Transcript: {transcript[:500] if transcript else 'NO TRANSCRIPT'}")
+        logger.info(f"[Vendor {vendor_index + 1}] Call ended. Reason: {ended_reason}")
+        logger.info(f"[Vendor {vendor_index + 1}] Transcript: {transcript[:300] if transcript else 'NO TRANSCRIPT'}")
         
         outcome = parse_call_outcome(transcript, ended_reason)
-        logger.info(f"Parsed outcome: confirmed={outcome.confirmed}, price={outcome.price}, notes={outcome.notes}")
-        
-        if outcome.confirmed:
-            price_info = f" at ${outcome.price}/{unit}" if outcome.price else ""
-            eta_info = f" - {outcome.eta}" if outcome.eta else ""
-            await send_update(f"✅ Order confirmed! {quantity} {unit} of {product}{price_info}{eta_info}")
-        else:
-            await send_update(f"❌ Order not confirmed. {outcome.notes or 'Vendor unavailable.'}")
+        logger.info(f"[Vendor {vendor_index + 1}] Outcome: confirmed={outcome.confirmed}, price={outcome.price}")
         
         return {
+            "vendor_name": vendor.name,
+            "vendor_index": vendor_index,
             "success": outcome.confirmed,
-            "order_id": order_id,
             "call_id": call_id,
-            "status": "confirmed" if outcome.confirmed else "failed",
+            "price": outcome.price,
+            "eta": outcome.eta,
             "outcome": outcome.model_dump(),
-            "error": None if outcome.confirmed else "Order not confirmed",
+            "error": None,
         }
         
     except Exception as e:
-        logger.exception(f"Failed to place order: {e}")
-        await send_update(f"❌ Something went wrong: {str(e)}")
+        logger.exception(f"[Vendor {vendor_index + 1}] Error: {e}")
         return {
+            "vendor_name": vendor.name,
+            "vendor_index": vendor_index,
             "success": False,
-            "order_id": order_id,
-            "status": "failed",
             "error": str(e),
+            "outcome": None,
         }
+
+
+async def place_orders_parallel(
+    product: str,
+    quantity: int,
+    unit: str = "dozen",
+    business_name: str = "Acme Bakery",
+    vendors: Optional[list[dict]] = None,
+    on_status_update: Optional[StatusCallback] = None,
+) -> dict:
+    """
+    Call up to 3 vendors in parallel and return all results.
+    
+    Uses hardcoded test phone numbers for all vendors.
+    Each vendor gets a unique name/context for different conversations.
+    
+    Args:
+        product: What to order
+        quantity: How many units
+        unit: Unit of measurement
+        business_name: Business placing the order
+        vendors: Optional list of vendor dicts from sourcing (names used for context)
+        on_status_update: Callback for status messages
+        
+    Returns:
+        dict with results from all vendor calls
+    """
+    async def send_update(message: str):
+        if on_status_update:
+            try:
+                await on_status_update(message)
+            except Exception as e:
+                logger.error(f"Failed to send status update: {e}")
+    
+    # Build vendor list from sourcing results
+    call_vendors = []
+    if vendors and len(vendors) > 0:
+        # Use vendors from sourcing (already have test phone numbers assigned)
+        for i, v in enumerate(vendors[:3]):  # Max 3 vendors
+            call_vendors.append(VendorInfo(
+                id=f"vendor-{i+1}",
+                name=v.get("name", f"Vendor {i+1}"),
+                phone=v.get("phone", TEST_VENDOR_PHONES[i]),  # Use phone from sourcing (already test number)
+                product=product,
+                price_per_unit=v.get("price_per_unit") or 4.00,
+                unit=unit,
+            ))
+    else:
+        # Fallback: create generic vendors if sourcing returned nothing
+        for i, name in enumerate(FALLBACK_VENDOR_NAMES):
+            call_vendors.append(VendorInfo(
+                id=f"vendor-{i+1}",
+                name=name,
+                phone=TEST_VENDOR_PHONES[i],
+                product=product,
+                price_per_unit=4.00,
+                unit=unit,
+            ))
+    
+    vendor_names = [v.name for v in call_vendors]
+    await send_update(f"📞 Calling {len(call_vendors)} vendors in parallel: {', '.join(vendor_names)}")
+    
+    logger.info(f"Starting parallel calls to {len(call_vendors)} vendors for {quantity} {unit} of {product}")
+    
+    # Create tasks for parallel execution
+    tasks = [
+        call_single_vendor(
+            vendor=vendor,
+            product=product,
+            quantity=quantity,
+            unit=unit,
+            business_name=business_name,
+            vendor_index=i,
+            on_status_update=None,  # Don't spam updates during calls
+        )
+        for i, vendor in enumerate(call_vendors)
+    ]
+    
+    # Run all calls in parallel
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Process results
+    successful = []
+    failed = []
+    
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            failed.append({
+                "vendor_name": call_vendors[i].name,
+                "error": str(result),
+            })
+        elif result.get("success"):
+            successful.append(result)
+        else:
+            failed.append(result)
+    
+    # Sort successful by price (lowest first)
+    successful.sort(key=lambda x: x.get("price") or 999)
+    
+    # Build summary message
+    if successful:
+        best = successful[0]
+        price_str = f"${best['price']}/{unit}" if best.get('price') else "price TBD"
+        await send_update(
+            f"✅ Got {len(successful)} confirmed! Best: {best['vendor_name']} at {price_str}"
+        )
+        if len(successful) > 1:
+            others = ", ".join([s['vendor_name'] for s in successful[1:]])
+            await send_update(f"Also confirmed: {others}")
+    else:
+        await send_update(f"❌ No vendors confirmed. {len(failed)} calls failed.")
+    
+    if failed:
+        failed_names = ", ".join([f.get("vendor_name", "Unknown") for f in failed])
+        logger.info(f"Failed calls: {failed_names}")
+    
+    return {
+        "success": len(successful) > 0,
+        "total_called": len(call_vendors),
+        "confirmed_count": len(successful),
+        "failed_count": len(failed),
+        "best_vendor": successful[0] if successful else None,
+        "all_confirmed": successful,
+        "all_failed": failed,
+        "product": product,
+        "quantity": quantity,
+        "unit": unit,
+    }
+
+
+# Legacy single-vendor function (for backward compat)
+async def place_order_with_updates(
+    product: str,
+    quantity: int,
+    unit: str = "dozen",
+    business_name: str = "My Business",
+    vendor_phone: Optional[str] = None,
+    on_status_update: Optional[StatusCallback] = None,
+) -> dict:
+    """Place order with single vendor (legacy)."""
+    # Use the new parallel function with just the first vendor
+    return await place_orders_parallel(
+        product=product,
+        quantity=quantity,
+        unit=unit,
+        business_name=business_name,
+        vendors=None,  # Use defaults
+        on_status_update=on_status_update,
+    )
 
 
 # Simple version for OpenAI function calling (no callbacks)
@@ -191,13 +306,13 @@ async def place_order(
     business_name: str = "My Business",
     vendor_phone: Optional[str] = None,
 ) -> dict:
-    """Simple place_order without status callbacks (for backward compat)."""
-    return await place_order_with_updates(
+    """Simple place_order without status callbacks."""
+    return await place_orders_parallel(
         product=product,
         quantity=quantity,
         unit=unit,
         business_name=business_name,
-        vendor_phone=vendor_phone,
+        vendors=None,
         on_status_update=None,
     )
 
@@ -207,7 +322,7 @@ PLACE_ORDER_FUNCTION = {
     "type": "function",
     "function": {
         "name": "place_order",
-        "description": "Place an order for ingredients by calling a vendor. Use this when the user wants to order something like eggs, flour, produce, etc.",
+        "description": "Place an order for ingredients by calling multiple vendors in parallel. Calls up to 3 vendors simultaneously to get the best price. Use this when the user confirms they want to order.",
         "parameters": {
             "type": "object",
             "properties": {

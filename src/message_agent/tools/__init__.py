@@ -1,7 +1,7 @@
 """Tools for the Message Agent."""
 
 from .vonage_tool import send_sms, verify_webhook_signature
-from .order_tool import place_order, place_order_with_updates, PLACE_ORDER_FUNCTION
+from .order_tool import place_order, place_order_with_updates, place_orders_parallel, PLACE_ORDER_FUNCTION
 from .sourcing_tool import source_vendors, SOURCE_VENDORS_FUNCTION
 
 __all__ = [

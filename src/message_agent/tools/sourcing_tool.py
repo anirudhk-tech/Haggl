@@ -13,8 +13,12 @@ from sourcing_agent import (
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded test phone number for all vendors
-TEST_VENDOR_PHONE = "+15633965540"
+# Hardcoded test phone numbers for vendors [0], [1], [2]
+TEST_VENDOR_PHONES = [
+    "+15633965540",  # Vendor 0
+    "+17203154946",  # Vendor 1
+    "+15128508061",  # Vendor 2
+]
 
 # Default location for sourcing
 DEFAULT_LOCATION = UserLocation(
@@ -67,23 +71,31 @@ async def source_vendors(
         sourcing_agent = get_sourcing_agent()
         response = await sourcing_agent.source_vendors(request)
         
-        # Extract vendors and override phone numbers for testing
-        vendors = []
+        # Extract vendors - take top 3 and assign test phone numbers
+        all_vendors = []
         for result in response.results:
             for vendor in result.vendors:
-                vendors.append({
-                    "name": vendor.vendor_name,
-                    "phone": TEST_VENDOR_PHONE,  # Hardcoded for testing
-                    "original_phone": vendor.phone,
-                    "website": vendor.website,
-                    "address": vendor.address,
-                    "distance_miles": vendor.distance_miles,
-                    "price_per_unit": vendor.pricing.price_per_unit if vendor.pricing else None,
-                    "unit": vendor.pricing.unit if vendor.pricing else unit,
-                    "rating": vendor.reviews.rating if vendor.reviews else None,
-                })
+                all_vendors.append(vendor)
         
-        logger.info(f"Found {len(vendors)} vendors for {product}. Vendors: {[vendor['name'] for vendor in vendors]}")
+        # Take only top 3 vendors (indices 0-2)
+        top_vendors = all_vendors[:3]
+        
+        vendors = []
+        for i, vendor in enumerate(top_vendors):
+            vendors.append({
+                "name": vendor.vendor_name,
+                "phone": TEST_VENDOR_PHONES[i],  # Assign test phone based on index
+                "original_phone": vendor.phone,
+                "website": vendor.website,
+                "address": vendor.address,
+                "distance_miles": vendor.distance_miles,
+                "price_per_unit": vendor.pricing.price_per_unit if vendor.pricing else None,
+                "unit": vendor.pricing.unit if vendor.pricing else unit,
+                "rating": vendor.reviews.rating if vendor.reviews else None,
+            })
+        
+        logger.info(f"Sourced {len(all_vendors)} vendors, using top {len(vendors)} for {product}")
+        logger.info(f"Vendors: {[(v['name'], v['phone']) for v in vendors]}")
         
         return {
             "success": True,
