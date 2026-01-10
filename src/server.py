@@ -28,6 +28,21 @@ from calling_agent.schemas import (
 from message_agent import get_message_agent
 from message_agent.schemas import IncomingSMS
 
+# Sourcing Agent imports
+from sourcing_agent import get_sourcing_agent, SourcingRequest, SourcingResponse
+from sourcing_agent.tools.storage import get_vendors_by_ingredient, clear_storage
+
+# Evaluation Agent imports
+from evaluation_agent import get_evaluation_agent
+from evaluation_agent.schemas import (
+    EvaluationParameter,
+    FeedbackDirection,
+    FeedbackRequest,
+    EvaluationRequest,
+    EvaluationResponse,
+    PreferenceWeights,
+)
+
 # Load environment variables
 load_dotenv()
 
@@ -108,7 +123,7 @@ async def health_check():
         "status": "healthy",
         "service": "Haggl Agent Server",
         "version": "0.1.0",
-        "agents": ["calling_agent", "message_agent"],
+        "agents": ["calling_agent", "message_agent", "sourcing_agent", "evaluation_agent"],
     }
 
 
@@ -343,6 +358,274 @@ async def reset_all_conversations():
     message_agent = get_message_agent()
     message_agent.clear_all_conversations()
     return {"status": "reset", "message": "All conversations cleared"}
+
+
+# =============================================================================
+# Sourcing Agent Routes
+# =============================================================================
+
+@app.post("/sourcing/search", response_model=SourcingResponse)
+async def search_vendors(request: SourcingRequest):
+    """
+    Search for vendors for given ingredients.
+
+    This endpoint:
+    1. Searches Exa.ai for each ingredient using multiple query strategies
+    2. Extracts structured vendor data using Claude
+    3. Estimates shipping distance
+    4. Saves results to local storage
+    5. Returns ranked results
+    """
+    logger.info(f"Received sourcing request: {request.request_id} for {len(request.ingredients)} ingredients")
+
+    agent = get_sourcing_agent()
+
+    try:
+        response = await agent.source_vendors(request)
+        logger.info(f"Sourcing complete: found {response.total_vendors_found} vendors")
+        return response
+    except Exception as e:
+        logger.exception(f"Error in sourcing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sourcing/results/{ingredient}")
+async def get_vendor_results(ingredient: str):
+    """Get cached vendor results for an ingredient."""
+    vendors = get_vendors_by_ingredient(ingredient)
+
+    if not vendors:
+        return {
+            "ingredient": ingredient,
+            "vendors": [],
+            "message": f"No cached vendors found for '{ingredient}'. Run a search first.",
+        }
+
+    return {
+        "ingredient": ingredient,
+        "vendor_count": len(vendors),
+        "vendors": vendors,
+    }
+
+
+@app.get("/sourcing/status")
+async def get_sourcing_status():
+    """Get current sourcing agent status."""
+    agent = get_sourcing_agent()
+    return {
+        "state": agent.get_state().value,
+        "error": agent.error,
+    }
+
+
+@app.post("/sourcing/reset")
+async def reset_sourcing():
+    """Clear sourcing agent cache and storage (for testing)."""
+    agent = get_sourcing_agent()
+    agent.clear_cache()
+    clear_storage()
+    return {"status": "reset", "message": "Sourcing agent cache and storage cleared"}
+
+
+# =============================================================================
+# Evaluation Agent Routes
+# =============================================================================
+
+class EvaluationRequestModel(BaseModel):
+    """Request model for vendor evaluation."""
+    business_id: str
+    ingredients: list[str] = []
+    budget: float = 1000.0
+
+
+class FeedbackRequestModel(BaseModel):
+    """Request model for preference feedback."""
+    business_id: str
+    parameter: str  # quality, affordability, shipping, reliability
+    direction: str  # up, down
+
+
+@app.post("/evaluation/vendors")
+async def evaluate_vendors(request: EvaluationRequestModel):
+    """
+    Evaluate and rank vendors for a business based on learned preferences.
+
+    This endpoint:
+    1. Gets the business's current preference weights
+    2. Scores vendors using Voyage AI embeddings + preference vectors
+    3. Returns ranked vendors within budget
+    """
+    logger.info(f"Received evaluation request for business: {request.business_id}")
+
+    eval_agent = get_evaluation_agent()
+
+    try:
+        eval_request = EvaluationRequest(
+            business_id=request.business_id,
+            ingredients=request.ingredients,
+            budget=request.budget,
+        )
+
+        response = eval_agent.evaluate_vendors(eval_request)
+
+        return {
+            "business_id": request.business_id,
+            "selected_vendors": [
+                {
+                    "vendor_id": v.vendor_id,
+                    "vendor_name": v.vendor_name,
+                    "scores": {
+                        "quality": v.scores.quality,
+                        "affordability": v.scores.affordability,
+                        "shipping": v.scores.shipping,
+                        "reliability": v.scores.reliability,
+                    },
+                    "embedding_score": v.embedding_score,
+                    "parameter_score": v.parameter_score,
+                    "final_score": v.final_score,
+                    "rank": v.rank,
+                }
+                for v in response.selected_vendors
+            ],
+            "total_cost": response.total_cost,
+            "budget": response.budget,
+            "savings": response.savings,
+            "weights_used": response.weights_used.model_dump(),
+        }
+
+    except Exception as e:
+        logger.exception(f"Error evaluating vendors: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/evaluation/feedback")
+async def process_feedback(request: FeedbackRequestModel):
+    """
+    Process user feedback to adjust preference weights.
+
+    When user clicks UP: increase weight for that parameter
+    When user clicks DOWN: decrease weight for that parameter
+
+    Weights are normalized to sum to 1.0.
+    """
+    logger.info(f"Received feedback: {request.business_id} - {request.parameter} {request.direction}")
+
+    eval_agent = get_evaluation_agent()
+
+    try:
+        # Validate parameter
+        try:
+            param = EvaluationParameter(request.parameter)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid parameter '{request.parameter}'. Must be one of: quality, affordability, shipping, reliability"
+            )
+
+        # Validate direction
+        try:
+            direction = FeedbackDirection(request.direction)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid direction '{request.direction}'. Must be 'up' or 'down'"
+            )
+
+        feedback = FeedbackRequest(
+            parameter=param,
+            direction=direction,
+        )
+
+        new_weights = eval_agent.process_feedback(request.business_id, feedback)
+
+        return {
+            "business_id": request.business_id,
+            "parameter_updated": request.parameter,
+            "direction": request.direction,
+            "new_weights": new_weights.model_dump(),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error processing feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/evaluation/preferences/{business_id}")
+async def get_preferences(business_id: str):
+    """
+    Get current preference weights for a business.
+
+    Returns the 4 parameter weights that sum to 1.0:
+    - quality: Weight for product quality
+    - affordability: Weight for price/value
+    - shipping: Weight for proximity/shipping distance
+    - reliability: Weight for delivery reliability
+    """
+    eval_agent = get_evaluation_agent()
+    prefs = eval_agent.get_preferences(business_id)
+
+    return {
+        "business_id": prefs.business_id,
+        "weights": prefs.weights.model_dump(),
+        "total_feedback_count": prefs.total_feedback_count,
+    }
+
+
+@app.get("/evaluation/radar/{business_id}/{vendor_id}")
+async def get_radar_data(business_id: str, vendor_id: str):
+    """
+    Get radar chart data for a specific vendor.
+
+    Returns scores formatted for Recharts radar visualization:
+    - parameter: Quality/Affordability/Shipping/Reliability
+    - value: Score 0-100
+    - fullMark: 100
+    """
+    eval_agent = get_evaluation_agent()
+
+    # Re-evaluate to get vendor scores
+    eval_request = EvaluationRequest(
+        business_id=business_id,
+        ingredients=[],
+        budget=10000,  # High budget to include all vendors
+    )
+
+    response = eval_agent.evaluate_vendors(eval_request)
+
+    # Find the requested vendor
+    vendor = next(
+        (v for v in response.selected_vendors if v.vendor_id == vendor_id),
+        None
+    )
+
+    if not vendor:
+        raise HTTPException(status_code=404, detail=f"Vendor {vendor_id} not found")
+
+    return {
+        "vendor_id": vendor.vendor_id,
+        "vendor_name": vendor.vendor_name,
+        "radar_data": eval_agent.get_radar_chart_data(vendor),
+    }
+
+
+@app.post("/evaluation/reset/{business_id}")
+async def reset_evaluation_preferences(business_id: str):
+    """Reset preference weights to default for a business."""
+    eval_agent = get_evaluation_agent()
+
+    # Reset by setting new default preferences
+    eval_agent._preferences[business_id] = eval_agent.get_preferences(business_id)
+    eval_agent._preferences[business_id].weights = PreferenceWeights()
+    eval_agent._preferences[business_id].total_feedback_count = 0
+
+    return {
+        "status": "reset",
+        "business_id": business_id,
+        "message": "Preference weights reset to defaults",
+        "weights": eval_agent._preferences[business_id].weights.model_dump(),
+    }
 
 
 # =============================================================================
