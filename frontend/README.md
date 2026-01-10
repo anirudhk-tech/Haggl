@@ -1,36 +1,92 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Haggl Frontend
+
+Beautiful, modern frontend for Haggl - AI Buyer for Small Businesses.
+
+## Tech Stack
+
+- **Framework:** Next.js 14 (App Router)
+- **Styling:** Tailwind CSS
+- **Icons:** Lucide React
+- **Font:** Inter (Google Fonts)
+- **Notifications:** Sonner
 
 ## Getting Started
 
-First, run the development server:
+### Install Dependencies
+
+```bash
+npm install
+```
+
+### Run Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Build for Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+frontend/
+├── app/
+│   ├── dashboard/          # Dashboard with stats and agent activity
+│   ├── new-order/          # 3-step order creation flow
+│   ├── orders/             # Orders list and detail pages
+│   ├── suppliers/          # Supplier directory
+│   ├── wallet/             # Wallet and transaction history
+│   ├── inbox/              # Call transcripts and messages
+│   ├── settings/           # User settings
+│   ├── layout.tsx          # Root layout with NavBar
+│   └── globals.css         # Global styles
+├── components/
+│   ├── NavBar.tsx          # Top navigation bar
+│   ├── AgentActivityPanel.tsx  # Live agent status
+│   ├── StatusBadge.tsx     # Order status badges
+│   ├── StatCard.tsx        # Dashboard stat cards
+│   ├── OrderCard.tsx       # Order list item
+│   └── ProgressPhase.tsx    # Order progress phases
+└── package.json
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Features
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Dashboard** - Overview with stats, agent activity, and recent orders
+- **New Order** - 3-step flow: Upload → Review → Confirm
+- **Order Tracking** - Real-time progress through 5 phases
+- **Supplier Directory** - Browse and search suppliers
+- **Wallet Management** - View balance, set limits, transaction history
+- **Inbox** - View call transcripts, emails, and invoices
+- **Settings** - Profile and preferences
 
-## Deploy on Vercel
+## Design System
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **Primary Color:** Green (#22C55E)
+- **Status Colors:** Blue (processing), Orange (live/calling), Yellow (attention), Rose (error), Purple (payment)
+- **Typography:** Inter font family
+- **Spacing:** Generous whitespace, clean minimal design
+- **Max Width:** 1100px content area, 1440px overall
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## API Integration
+
+Currently uses mock data. Connect to the Haggl backend API by:
+
+1. Create `lib/api.ts` for API client
+2. Replace mock data in pages with API calls
+3. Add loading and error states
+
+Example API endpoints:
+- `GET /api/orders` - List orders
+- `GET /api/orders/:id` - Order details
+- `POST /api/orders` - Create order
+- `GET /api/wallet` - Wallet info
+- `GET /api/suppliers` - Supplier list
+
