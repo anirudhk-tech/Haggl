@@ -25,6 +25,13 @@ from .tools import (
     SOURCE_VENDORS_FUNCTION,
 )
 
+# Storage imports
+try:
+    from storage.conversations import append_message, update_context
+    STORAGE_ENABLED = True
+except ImportError:
+    STORAGE_ENABLED = False
+
 logger = logging.getLogger(__name__)
 
 # OpenAI configuration
@@ -111,6 +118,13 @@ class MessageAgent:
             )
         )
         
+        # Save to MongoDB
+        if STORAGE_ENABLED:
+            try:
+                append_message(incoming.from_number, "user", incoming.body)
+            except Exception as e:
+                logger.warning(f"Failed to save message to MongoDB: {e}")
+        
         # Generate response using OpenAI
         response_text = await self._generate_response(conversation)
         
@@ -122,6 +136,13 @@ class MessageAgent:
                 timestamp=datetime.utcnow().isoformat(),
             )
         )
+        
+        # Save assistant response to MongoDB
+        if STORAGE_ENABLED:
+            try:
+                append_message(incoming.from_number, "assistant", response_text)
+            except Exception as e:
+                logger.warning(f"Failed to save assistant message to MongoDB: {e}")
         
         return response_text
     
@@ -208,6 +229,7 @@ class MessageAgent:
                             unit=unit,
                             business_name="Acme Bakery",
                             vendors=vendors,
+                            phone_number=conversation.phone_number,
                             on_status_update=send_status_update,
                         )
                     )
@@ -241,6 +263,7 @@ class MessageAgent:
                             unit=unit,
                             business_name="Acme Bakery",
                             vendors=vendors if vendors else None,
+                            phone_number=conversation.phone_number,
                             on_status_update=send_status_update,
                         )
                     )
