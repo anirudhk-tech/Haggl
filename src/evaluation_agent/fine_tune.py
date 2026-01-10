@@ -79,43 +79,20 @@ def learn_preference_vectors(training_data: list[dict]) -> dict:
         all_texts.append(example['negative'])
         text_types.append('negative')
 
-    # Get embeddings in batches with rate limiting
-    # Free tier: 3 RPM and 10K TPM - use smaller batches and delays
+    # Get embeddings in batches (Voyage allows up to 128 texts per request)
     logger.info("Computing embeddings...")
     all_embeddings = []
-    batch_size = 20  # Smaller batches for rate limiting
-    delay_between_batches = 22  # ~3 requests per minute
-
-    import time
+    batch_size = 100
 
     for i in range(0, len(all_texts), batch_size):
         batch = all_texts[i:i + batch_size]
-
-        # Retry logic for rate limits
-        max_retries = 5
-        for attempt in range(max_retries):
-            try:
-                result = client.embed(
-                    texts=batch,
-                    model=BASE_MODEL,
-                    input_type="document",
-                )
-                all_embeddings.extend(result.embeddings)
-                logger.info(f"  Processed {min(i + batch_size, len(all_texts))}/{len(all_texts)} texts")
-                break
-            except Exception as e:
-                if "RateLimitError" in str(type(e).__name__) or "rate" in str(e).lower():
-                    wait_time = delay_between_batches * (attempt + 1)
-                    logger.warning(f"  Rate limited, waiting {wait_time}s... (attempt {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    raise
-        else:
-            raise Exception(f"Failed after {max_retries} retries due to rate limiting")
-
-        # Delay between batches to respect rate limits
-        if i + batch_size < len(all_texts):
-            time.sleep(delay_between_batches)
+        result = client.embed(
+            texts=batch,
+            model=BASE_MODEL,
+            input_type="document",
+        )
+        all_embeddings.extend(result.embeddings)
+        logger.info(f"  Processed {min(i + batch_size, len(all_texts))}/{len(all_texts)} texts")
 
     # Compute preference direction vectors
     # For each triplet, the preference vector = positive_emb - negative_emb
@@ -252,10 +229,8 @@ def main():
     logger.info(f"API Key: {VOYAGE_API_KEY[:20]}...")
 
     # Step 1: Generate training data
-    # Using 200 examples due to Voyage API rate limits (3 RPM without payment method)
-    # This provides good coverage for preference learning while completing in ~15 minutes
     logger.info("\n[1/4] Generating training data...")
-    training_data = generate_training_data(num_examples=200)
+    training_data = generate_training_data(num_examples=1000)
     logger.info(f"Generated {len(training_data)} training examples")
     save_training_data(training_data)
 
