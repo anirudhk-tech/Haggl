@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Header } from "@/components/layout/nav";
-import { demoOrders, demoStats } from "@/lib/demo-data";
+import { demoOrders, demoStats, demoPendingApprovals } from "@/lib/demo-data";
 import { ArrowUpRight, RotateCcw } from "lucide-react";
 import Link from "next/link";
 
@@ -75,13 +75,15 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-1">Compared to market avg</p>
           </div>
 
-          <div className="px-8 py-6">
-            <p className="section-header">Pending Approval</p>
-            <p className="text-4xl font-medium tracking-tight mt-2 mono-number">
-              {String(demoStats.pendingApprovals).padStart(2, "0")}
+          <Link href="/approvals" className="block px-8 py-6 fill-hover group">
+            <p className="section-header relative z-10">Pending Approval</p>
+            <p className="text-4xl font-medium tracking-tight mt-2 mono-number relative z-10">
+              {String(demoPendingApprovals.length).padStart(2, "0")}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">No action required</p>
-          </div>
+            <p className="text-xs text-muted-foreground mt-1 relative z-10">
+              {demoPendingApprovals.length > 0 ? "Click to review" : "No action required"}
+            </p>
+          </Link>
         </div>
 
         {/* Recent Orders */}

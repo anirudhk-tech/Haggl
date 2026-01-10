@@ -5,9 +5,8 @@ import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Header } from "@/components/layout/nav";
 import { VendorRadarChart } from "@/components/vendors/radar-chart";
-import { PreferenceControls } from "@/components/vendors/preference-controls";
-import { demoVendors, defaultWeights, demoOrders } from "@/lib/demo-data";
-import type { PreferenceWeights } from "@/lib/types";
+import { CorrectionDialog } from "@/components/vendors/correction-dialog";
+import { demoVendors, demoOrders, demoVendorOrders } from "@/lib/demo-data";
 import {
   ArrowLeft,
   Phone,
@@ -17,26 +16,26 @@ import {
   Star,
   Package,
   ArrowUpRight,
-  RotateCcw,
+  DollarSign,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 
-function normalizeWeights(weights: PreferenceWeights): PreferenceWeights {
-  const total = weights.quality + weights.affordability + weights.shipping + weights.reliability;
-  return {
-    quality: weights.quality / total,
-    affordability: weights.affordability / total,
-    shipping: weights.shipping / total,
-    reliability: weights.reliability / total,
-  };
-}
+const PARAM_LABELS = {
+  quality: "Quality",
+  affordability: "Affordability",
+  shipping: "Shipping",
+  reliability: "Reliability",
+} as const;
 
 export default function VendorProfilePage() {
   const params = useParams();
   const vendorId = params.id as string;
   const vendor = demoVendors.find((v) => v.vendor_id === vendorId);
-  const [weights, setWeights] = useState<PreferenceWeights>(defaultWeights);
+  const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState<string | null>(null);
 
   if (!vendor) {
     return (
@@ -55,37 +54,32 @@ export default function VendorProfilePage() {
     );
   }
 
-  // Calculate updated scores based on current weights
-  const parameterScore =
-    weights.quality * (vendor.scores.quality / 100) +
-    weights.affordability * (vendor.scores.affordability / 100) +
-    weights.shipping * (vendor.scores.shipping / 100) +
-    weights.reliability * (vendor.scores.reliability / 100);
-  const finalScore = (0.3 * vendor.embedding_score + 0.7 * parameterScore) * 100;
-
   // Find orders with this vendor
   const vendorOrders = demoOrders.filter((order) =>
     order.ingredients.some((ing) => ing.vendor_name === vendor.vendor_name)
   );
 
-  const handleWeightUpdate = (param: keyof PreferenceWeights, direction: "up" | "down") => {
-    setWeights((prev) => {
-      const delta = direction === "up" ? 0.05 : -0.05;
-      const newValue = Math.max(0.05, Math.min(0.6, prev[param] + delta));
-      const updated = { ...prev, [param]: newValue };
-      const normalized = normalizeWeights(updated);
+  // Get previous orders for this vendor
+  const previousOrders = demoVendorOrders[vendor.vendor_id] || [];
 
-      toast.success(
-        `${param.charAt(0).toUpperCase() + param.slice(1)} preference updated`
-      );
+  const handleCorrection = async (
+    parameter: keyof typeof PARAM_LABELS,
+    direction: "up" | "down"
+  ) => {
+    setIsSubmitting(`${parameter}-${direction}`);
 
-      return normalized;
-    });
+    // Simulate API call
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    toast.success(
+      `${PARAM_LABELS[parameter]} correction submitted: actual is ${direction === "up" ? "higher" : "lower"}`
+    );
+
+    setIsSubmitting(null);
   };
 
-  const handleReset = () => {
-    setWeights(defaultWeights);
-    toast.success("Preferences reset to defaults");
+  const handleChartClick = () => {
+    setCorrectionDialogOpen(true);
   };
 
   return (
@@ -119,19 +113,50 @@ export default function VendorProfilePage() {
         <div className="grid md:grid-cols-3 border-b border-border">
           {/* Radar Chart Section */}
           <div className="md:col-span-1 px-8 py-8 border-b md:border-b-0 md:border-r border-border">
-            <VendorRadarChart scores={vendor.scores} size="lg" />
+            <div
+              className="cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={handleChartClick}
+            >
+              <VendorRadarChart scores={vendor.scores} size="lg" interactive />
+            </div>
             <div className="text-center mt-6">
               <span className="text-5xl font-medium tracking-tight font-mono">
-                {finalScore.toFixed(1)}
+                {vendor.final_score.toFixed(1)}
               </span>
               <p className="text-xs text-muted-foreground uppercase tracking-wider mt-2">
-                Final Score
+                Final Score • Rank #{vendor.rank}
               </p>
             </div>
           </div>
 
           {/* Contact & Products */}
           <div className="md:col-span-2">
+            {/* Pricing Info */}
+            {vendor.price_per_unit && (
+              <div className="px-8 py-6 border-b border-border bg-secondary/30">
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-2xl font-medium font-mono">
+                      ${vendor.price_per_unit.toFixed(2)}
+                    </span>
+                    <span className="text-muted-foreground">/{vendor.unit}</span>
+                  </div>
+                  {vendor.min_order && (
+                    <div className="text-sm text-muted-foreground">
+                      Min order: <span className="font-mono">{vendor.min_order} {vendor.min_order_unit}</span>
+                    </div>
+                  )}
+                  {vendor.distance_miles && (
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <MapPin className="h-3 w-3" />
+                      <span className="font-mono">{vendor.distance_miles.toFixed(1)} mi</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Contact Info */}
             <div className="px-8 py-6 border-b border-border">
               <h2 className="section-header mb-4">Contact</h2>
@@ -157,15 +182,7 @@ export default function VendorProfilePage() {
                 {vendor.address && (
                   <div className="flex items-center gap-3 text-sm">
                     <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span>
-                      {vendor.address}
-                      {vendor.distance_miles && (
-                        <span className="text-muted-foreground font-mono">
-                          {" "}
-                          ({vendor.distance_miles.toFixed(1)} mi)
-                        </span>
-                      )}
-                    </span>
+                    <span>{vendor.address}</span>
                   </div>
                 )}
               </div>
@@ -192,70 +209,103 @@ export default function VendorProfilePage() {
           </div>
         </div>
 
-        {/* Preference Learning Section */}
+        {/* Score Corrections Section */}
         <div className="grid md:grid-cols-2 border-b border-border">
-          {/* Adjust Preferences */}
+          {/* Score Breakdown with Corrections */}
           <div className="border-b md:border-b-0 md:border-r border-border">
-            <div className="px-8 py-4 border-b border-border flex items-center justify-between">
-              <h2 className="section-header">Adjust Preferences</h2>
-              <button
-                className="fill-hover px-3 py-1.5 text-xs uppercase tracking-wider flex items-center gap-1 border border-border"
-                onClick={handleReset}
-              >
-                <RotateCcw className="h-3 w-3 relative z-10" />
-                <span className="relative z-10">Reset</span>
-              </button>
+            <div className="px-8 py-4 border-b border-border">
+              <h2 className="section-header">Score Corrections</h2>
             </div>
-            <div className="px-8 py-6">
-              <PreferenceControls
-                weights={weights}
-                onUpdate={handleWeightUpdate}
-              />
-              <p className="text-xs text-muted-foreground mt-4">
-                Your preferences affect how all vendors are ranked.
+            <div>
+              {(Object.entries(PARAM_LABELS) as [keyof typeof PARAM_LABELS, string][]).map(
+                ([key, label]) => (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between px-8 py-4 border-b border-border last:border-0"
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs uppercase tracking-wider text-muted-foreground w-28">
+                        {label}
+                      </span>
+                      <span className="font-mono text-lg font-medium">
+                        {vendor.scores[key]}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="fill-hover-vertical h-9 w-9 flex items-center justify-center border border-border disabled:opacity-50"
+                        onClick={() => handleCorrection(key, "up")}
+                        disabled={isSubmitting !== null}
+                        title="Actual is higher than predicted"
+                      >
+                        <ChevronUp className="h-4 w-4 relative z-10" />
+                      </button>
+                      <button
+                        className="fill-hover-vertical h-9 w-9 flex items-center justify-center border border-border disabled:opacity-50"
+                        onClick={() => handleCorrection(key, "down")}
+                        disabled={isSubmitting !== null}
+                        title="Actual is lower than predicted"
+                      >
+                        <ChevronDown className="h-4 w-4 relative z-10" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+            <div className="px-8 py-3 bg-secondary/30">
+              <p className="text-[10px] text-muted-foreground">
+                Click up if actual is higher than shown, down if lower. Corrections improve model predictions.
               </p>
             </div>
           </div>
 
-          {/* Score Breakdown */}
+          {/* Previous Orders */}
           <div>
             <div className="px-8 py-4 border-b border-border">
-              <h2 className="section-header">Score Breakdown</h2>
+              <h2 className="section-header">Previous Orders ({previousOrders.length})</h2>
             </div>
-            <div className="px-8 py-6 space-y-3">
-              <div className="flex justify-between text-sm py-2 border-b border-border">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground">Quality</span>
-                <span className="font-mono">{vendor.scores.quality}</span>
+            {previousOrders.length > 0 ? (
+              <div>
+                {previousOrders.map((order) => (
+                  <div
+                    key={order.order_id}
+                    className="px-8 py-4 border-b border-border last:border-0"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-xs font-mono text-muted-foreground">
+                          {order.order_id}
+                        </p>
+                        <p className="text-sm mt-0.5">{order.items.join(", ")}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {order.quantity}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-mono font-medium">
+                          ${order.total.toFixed(2)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(order.date).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="flex justify-between text-sm py-2 border-b border-border">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground">Affordability</span>
-                <span className="font-mono">{vendor.scores.affordability}</span>
+            ) : (
+              <div className="px-8 py-8 text-center">
+                <p className="text-sm text-muted-foreground">No previous orders</p>
               </div>
-              <div className="flex justify-between text-sm py-2 border-b border-border">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground">Shipping</span>
-                <span className="font-mono">{vendor.scores.shipping}</span>
-              </div>
-              <div className="flex justify-between text-sm py-2 border-b border-border">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground">Reliability</span>
-                <span className="font-mono">{vendor.scores.reliability}</span>
-              </div>
-              <div className="flex justify-between text-sm py-2 border-b border-border">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground">Embedding Score</span>
-                <span className="font-mono">{vendor.embedding_score.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm py-2 border-b border-border">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground">Parameter Score</span>
-                <span className="font-mono">{parameterScore.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm py-2 font-medium">
-                <span className="text-xs uppercase tracking-wider">Final Score</span>
-                <span className="font-mono text-lg">{finalScore.toFixed(1)}</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Order History */}
+        {/* Order History from Main Orders */}
         {vendorOrders.length > 0 && (
           <div className="border-b border-border">
             <div className="px-8 py-4 border-b border-border">
@@ -314,6 +364,16 @@ export default function VendorProfilePage() {
           </a>
         </div>
       </div>
+
+      {/* Correction Dialog */}
+      <CorrectionDialog
+        vendor={vendor}
+        open={correctionDialogOpen}
+        onOpenChange={setCorrectionDialogOpen}
+        onCorrection={(vendorId, parameter, direction) => {
+          console.log("Correction:", { vendorId, parameter, direction });
+        }}
+      />
     </>
   );
 }

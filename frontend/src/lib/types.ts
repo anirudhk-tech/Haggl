@@ -43,6 +43,11 @@ export interface Vendor {
   parameter_score: number;
   final_score: number;
   rank: number;
+  // Pricing info
+  price_per_unit?: number;
+  unit?: string;
+  min_order?: number;
+  min_order_unit?: string;
 }
 
 // Order status
@@ -105,4 +110,84 @@ export interface RadarDataPoint {
   parameter: string;
   value: number;
   fullMark: number;
+}
+
+// Vendor order history (for correction dialog)
+export interface VendorOrder {
+  order_id: string;
+  date: string;
+  items: string[];
+  quantity: string;
+  total: number;
+}
+
+// Correction request for online learning
+export interface CorrectionRequest {
+  vendor_id: string;
+  parameter: "quality" | "affordability" | "shipping" | "reliability";
+  direction: "up" | "down";
+  current_prediction: number;
+}
+
+// Correction response from backend
+export interface CorrectionResponse {
+  status: string;
+  parameter: string;
+  direction: string;
+  new_prediction: number;
+}
+
+// Vendor message (calls and SMS)
+export interface VendorMessage {
+  id: string;
+  vendor_id: string;
+  vendor_name: string;
+  type: "call" | "sms";
+  direction: "inbound" | "outbound";
+  timestamp: string;
+  duration?: string;
+  content: string;
+  transcript?: string;
+}
+
+// Extended vendor with pricing info
+export interface VendorPricing {
+  price_per_unit: number;
+  unit: string;
+  min_order?: number;
+  min_order_unit?: string;
+}
+
+// Pending approval for an ingredient
+export interface PendingApproval {
+  approval_id: string;
+  created_at: string;
+  ingredient: string;
+  quantity: number;
+  unit: string;
+  vendor: Vendor;
+  total_price: number;
+  has_invoice: boolean;
+  invoice_url?: string;
+  alternatives: Vendor[];
+}
+
+// Wallet transaction
+export interface WalletTransaction {
+  id: string;
+  type: "deposit" | "payment" | "refund";
+  amount: number;
+  description: string;
+  timestamp: string;
+  status: "pending" | "completed" | "failed";
+  reference?: string;
+  vendor_name?: string;
+}
+
+// Wallet data
+export interface Wallet {
+  balance: number;
+  pending_balance: number;
+  currency: string;
+  transactions: WalletTransaction[];
 }
