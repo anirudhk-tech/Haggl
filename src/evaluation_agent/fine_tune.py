@@ -32,7 +32,7 @@ VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY", "pa-f-ViMrYCaqJcJqgWmeo8icmSTyZCYid
 BASE_MODEL = "voyage-lite-02-instruct"
 
 
-def generate_training_data(num_examples: int = 50) -> list[dict]:
+def generate_training_data(num_examples: int = 1000) -> list[dict]:
     """Generate training examples for fine-tuning."""
     from .tools.exa_tool import generate_training_data as gen_data
     return gen_data(num_examples)
