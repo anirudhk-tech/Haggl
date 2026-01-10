@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import type { PreferenceWeights } from "@/lib/types";
 
@@ -19,37 +18,33 @@ const PARAMS: { key: keyof PreferenceWeights; label: string }[] = [
 
 export function PreferenceControls({ weights, onUpdate, compact = false }: PreferenceControlsProps) {
   return (
-    <div className={compact ? "space-y-2" : "space-y-3"}>
+    <div className={compact ? "space-y-2" : "space-y-0"}>
       {PARAMS.map(({ key, label }) => (
         <div
           key={key}
-          className="flex items-center justify-between gap-2"
+          className="flex items-center justify-between py-3 border-b border-border last:border-0"
         >
-          <span className={`${compact ? "text-xs" : "text-sm"} text-muted-foreground min-w-20`}>
+          <span className="text-xs uppercase tracking-wider text-muted-foreground">
             {label}
           </span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 hover:bg-emerald-50 hover:text-emerald-600 active:scale-90 transition-transform"
+          <div className="flex items-center gap-2">
+            <button
+              className="fill-hover-vertical h-7 w-7 flex items-center justify-center border border-border"
               onClick={() => onUpdate(key, "up")}
               disabled={weights[key] >= 0.6}
             >
-              <ChevronUp className="h-4 w-4" />
-            </Button>
-            <span className={`${compact ? "text-xs" : "text-sm"} font-medium w-10 text-center tabular-nums`}>
+              <ChevronUp className="h-4 w-4 relative z-10" />
+            </button>
+            <span className="text-sm font-medium w-12 text-center font-mono">
               {Math.round(weights[key] * 100)}%
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 hover:bg-red-50 hover:text-red-600 active:scale-90 transition-transform"
+            <button
+              className="fill-hover-vertical h-7 w-7 flex items-center justify-center border border-border"
               onClick={() => onUpdate(key, "down")}
               disabled={weights[key] <= 0.05}
             >
-              <ChevronDown className="h-4 w-4" />
-            </Button>
+              <ChevronDown className="h-4 w-4 relative z-10" />
+            </button>
           </div>
         </div>
       ))}

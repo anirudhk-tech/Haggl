@@ -26,7 +26,7 @@ export function VendorRadarChart({ scores, size = "md" }: VendorRadarChartProps)
   const dimensions = {
     sm: { width: 120, height: 120, fontSize: 9 },
     md: { width: 180, height: 180, fontSize: 10 },
-    lg: { width: 280, height: 280, fontSize: 12 },
+    lg: { width: 280, height: 280, fontSize: 11 },
   };
 
   const { width, height, fontSize } = dimensions[size];
@@ -35,25 +35,27 @@ export function VendorRadarChart({ scores, size = "md" }: VendorRadarChartProps)
     <div style={{ width, height }} className="mx-auto">
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-          <PolarGrid stroke="#E5E7EB" />
+          <PolarGrid stroke="#E5E0D8" strokeWidth={1} />
           <PolarAngleAxis
             dataKey="parameter"
-            tick={{ fontSize, fill: "#6B7280" }}
+            tick={{ fontSize, fill: "#737373", fontFamily: "var(--font-ibm-plex-mono)" }}
+            tickLine={false}
           />
           <PolarRadiusAxis
             angle={90}
             domain={[0, 100]}
-            tick={{ fontSize: fontSize - 2, fill: "#9CA3AF" }}
+            tick={{ fontSize: fontSize - 1, fill: "#A3A3A3" }}
             tickCount={3}
+            axisLine={false}
           />
           <Radar
             name="Scores"
             dataKey="value"
-            stroke="#2563EB"
-            fill="#2563EB"
-            fillOpacity={0.15}
-            strokeWidth={2}
-            animationDuration={600}
+            stroke="#0A0A0B"
+            fill="#0A0A0B"
+            fillOpacity={0.1}
+            strokeWidth={1.5}
+            animationDuration={400}
             animationEasing="ease-out"
           />
         </RadarChart>

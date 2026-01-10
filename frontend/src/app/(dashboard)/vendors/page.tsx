@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Header } from "@/components/layout/nav";
 import { VendorCard } from "@/components/vendors/vendor-card";
@@ -83,55 +81,50 @@ export default function VendorsPage() {
   return (
     <>
       <Header title="Vendors" />
-      <div className="p-6 space-y-6 animate-fade-in">
-        {/* Page Title */}
-        <div className="hidden md:flex md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Vendors</h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              {vendors.length} vendors ranked by your preferences
-            </p>
-          </div>
-        </div>
+      <div className="animate-fade-in">
+        {/* Page Header */}
+        <header className="hidden md:block px-8 py-8 border-b border-border">
+          <h1 className="page-header">Vendors</h1>
+          <p className="page-header-subtitle mt-1">
+            {vendors.length} vendors ranked by your preferences
+          </p>
+        </header>
 
         {/* Search and Filter Bar */}
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
+        <div className="flex border-b border-border">
+          <div className="flex-1 flex items-center gap-3 px-6 py-3 border-r border-border">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
               placeholder="Search vendors or products..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
             />
           </div>
-          <Button
-            variant={showPreferences ? "default" : "outline"}
-            size="icon"
+          <button
+            className={`fill-hover px-6 py-3 flex items-center gap-2 text-sm font-medium uppercase tracking-wider ${showPreferences ? 'filled' : ''}`}
             onClick={() => setShowPreferences(!showPreferences)}
           >
-            <SlidersHorizontal className="h-4 w-4" />
-          </Button>
+            <SlidersHorizontal className="h-4 w-4 relative z-10" />
+            <span className="relative z-10">Preferences</span>
+          </button>
         </div>
 
         {/* Preference Controls */}
         {showPreferences && (
-          <Card className="animate-slide-up">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">Your Preferences</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleReset}
-                  className="h-7 text-xs"
-                >
-                  <RotateCcw className="h-3 w-3 mr-1" />
-                  Reset
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
+          <div className="border-b border-border animate-slide-up">
+            <div className="px-8 py-4 border-b border-border flex items-center justify-between">
+              <h2 className="section-header">Your Preferences</h2>
+              <button
+                className="fill-hover px-3 py-1.5 text-xs uppercase tracking-wider flex items-center gap-1 border border-border"
+                onClick={handleReset}
+              >
+                <RotateCcw className="h-3 w-3 relative z-10" />
+                <span className="relative z-10">Reset</span>
+              </button>
+            </div>
+            <div className="px-8 py-4">
               <PreferenceControls
                 weights={weights}
                 onUpdate={handleWeightUpdate}
@@ -139,27 +132,26 @@ export default function VendorsPage() {
               <p className="text-xs text-muted-foreground mt-4">
                 Click arrows to adjust importance. Vendors re-rank in real-time.
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
 
-        {/* Vendor Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 stagger-children">
-          {vendors.map((vendor) => (
-            <VendorCard key={vendor.vendor_id} vendor={vendor} />
+        {/* Vendor List */}
+        <div className="stagger-children">
+          {vendors.map((vendor, index) => (
+            <VendorCard key={vendor.vendor_id} vendor={vendor} index={index} />
           ))}
         </div>
 
         {vendors.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">No vendors found</p>
-            <Button
-              variant="link"
+          <div className="text-center py-16">
+            <p className="text-muted-foreground text-sm">No vendors found</p>
+            <button
+              className="fill-hover mt-4 px-4 py-2 text-sm border border-border"
               onClick={() => setSearch("")}
-              className="mt-2"
             >
-              Clear search
-            </Button>
+              <span className="relative z-10">Clear search</span>
+            </button>
           </div>
         )}
       </div>

@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Header } from "@/components/layout/nav";
 import { demoMessages, demoProfile } from "@/lib/demo-data";
@@ -35,78 +34,76 @@ export default function MessagesPage() {
   return (
     <>
       <Header title="Messages" />
-      <div className="p-6 space-y-6 animate-fade-in max-w-2xl mx-auto">
-        {/* Page Title */}
-        <div className="hidden md:block">
-          <h1 className="text-2xl font-semibold">Messages</h1>
-          <p className="text-muted-foreground text-sm mt-1">
+      <div className="animate-fade-in">
+        {/* Page Header */}
+        <header className="hidden md:block px-8 py-8 border-b border-border">
+          <h1 className="page-header">Messages</h1>
+          <p className="page-header-subtitle mt-1">
             SMS conversation with Haggl
           </p>
-        </div>
+        </header>
 
         {/* Phone Numbers */}
-        <Card>
-          <CardContent className="p-4 flex justify-between items-center">
-            <div>
-              <p className="text-xs text-muted-foreground">Your Number</p>
-              <p className="text-sm font-medium">{demoProfile.phone}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">Haggl Bot</p>
-              <p className="text-sm font-medium">+1-888-HAGGL-AI</p>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex border-b border-border">
+          <div className="flex-1 px-8 py-4 border-r border-border">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Your Number</p>
+            <p className="text-sm font-medium font-mono mt-1">{demoProfile.phone}</p>
+          </div>
+          <div className="flex-1 px-8 py-4">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Haggl Bot</p>
+            <p className="text-sm font-medium font-mono mt-1">+1-888-HAGGL-AI</p>
+          </div>
+        </div>
 
-        {/* Messages */}
-        <Card>
-          <CardContent className="p-4">
-            {/* Date Header */}
-            <div className="text-center mb-4">
-              <Badge variant="secondary" className="text-xs">
-                {formatDate(demoMessages[0]?.timestamp || new Date().toISOString())}
-              </Badge>
-            </div>
+        {/* Messages Container */}
+        <div className="px-8 py-6 border-b border-border">
+          {/* Date Header */}
+          <div className="text-center mb-6">
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wider border-border">
+              {formatDate(demoMessages[0]?.timestamp || new Date().toISOString())}
+            </Badge>
+          </div>
 
-            {/* Message List */}
-            <div className="space-y-4">
-              {demoMessages.map((message) => (
+          {/* Message List */}
+          <div className="space-y-4 max-w-2xl mx-auto">
+            {demoMessages.map((message) => (
+              <div
+                key={message.id}
+                className={cn(
+                  "flex animate-fade-in",
+                  message.role === "user" ? "justify-end" : "justify-start"
+                )}
+              >
                 <div
-                  key={message.id}
                   className={cn(
-                    "flex",
-                    message.role === "user" ? "justify-end" : "justify-start"
+                    "max-w-[80%] px-4 py-3 border",
+                    message.role === "user"
+                      ? "bg-foreground text-background border-foreground"
+                      : "bg-transparent text-foreground border-border"
                   )}
                 >
-                  <div
+                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  <p
                     className={cn(
-                      "max-w-[80%] rounded-2xl px-4 py-2 animate-fade-in",
+                      "text-[10px] mt-2 font-mono",
                       message.role === "user"
-                        ? "bg-primary text-primary-foreground rounded-br-sm"
-                        : "bg-secondary text-secondary-foreground rounded-bl-sm"
+                        ? "text-background/70"
+                        : "text-muted-foreground"
                     )}
                   >
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    <p
-                      className={cn(
-                        "text-[10px] mt-1",
-                        message.role === "user"
-                          ? "text-primary-foreground/70"
-                          : "text-muted-foreground"
-                      )}
-                    >
-                      {formatTime(message.timestamp)}
-                    </p>
-                  </div>
+                    {formatTime(message.timestamp)}
+                  </p>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Help Text */}
-        <div className="text-center text-xs text-muted-foreground">
-          <p>Text commands: REORDER, ORDER, APPROVE, DENY, STATUS, BUDGET</p>
+        <div className="px-8 py-4 text-center">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">
+            Commands: REORDER, ORDER, APPROVE, DENY, STATUS, BUDGET
+          </p>
         </div>
       </div>
     </>

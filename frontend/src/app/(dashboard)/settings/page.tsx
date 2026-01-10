@@ -1,15 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Header } from "@/components/layout/nav";
 import { PreferenceControls } from "@/components/vendors/preference-controls";
 import { demoProfile, defaultWeights } from "@/lib/demo-data";
 import type { PreferenceWeights } from "@/lib/types";
-import { RotateCcw, Save } from "lucide-react";
+import { RotateCcw, Save, Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 function normalizeWeights(weights: PreferenceWeights): PreferenceWeights {
@@ -51,35 +47,41 @@ export default function SettingsPage() {
   return (
     <>
       <Header title="Settings" />
-      <div className="p-6 space-y-6 animate-fade-in max-w-2xl mx-auto">
-        {/* Page Title */}
-        <div className="hidden md:block">
-          <h1 className="text-2xl font-semibold">Settings</h1>
-          <p className="text-muted-foreground text-sm mt-1">
+      <div className="animate-fade-in">
+        {/* Page Header */}
+        <header className="hidden md:block px-8 py-8 border-b border-border">
+          <h1 className="page-header">Settings</h1>
+          <p className="page-header-subtitle mt-1">
             Manage your business profile and preferences
           </p>
-        </div>
+        </header>
 
         {/* Business Profile */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Business Profile</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="border-b border-border">
+          <div className="px-8 py-4 border-b border-border">
+            <h2 className="section-header">Business Profile</h2>
+          </div>
+          <div className="px-8 py-6 space-y-4">
             <div>
-              <label className="text-sm text-muted-foreground">Business Name</label>
-              <Input
+              <label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Business Name
+              </label>
+              <input
+                type="text"
                 value={profile.business_name}
                 onChange={(e) =>
                   setProfile({ ...profile, business_name: e.target.value })
                 }
-                className="mt-1"
+                className="w-full h-10 px-3 mt-2 bg-transparent border border-border text-sm focus:outline-none focus:border-foreground"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm text-muted-foreground">City</label>
-                <Input
+                <label className="text-xs uppercase tracking-wider text-muted-foreground">
+                  City
+                </label>
+                <input
+                  type="text"
                   value={profile.location.city}
                   onChange={(e) =>
                     setProfile({
@@ -87,12 +89,15 @@ export default function SettingsPage() {
                       location: { ...profile.location, city: e.target.value },
                     })
                   }
-                  className="mt-1"
+                  className="w-full h-10 px-3 mt-2 bg-transparent border border-border text-sm focus:outline-none focus:border-foreground"
                 />
               </div>
               <div>
-                <label className="text-sm text-muted-foreground">State</label>
-                <Input
+                <label className="text-xs uppercase tracking-wider text-muted-foreground">
+                  State
+                </label>
+                <input
+                  type="text"
                   value={profile.location.state}
                   onChange={(e) =>
                     setProfile({
@@ -100,115 +105,120 @@ export default function SettingsPage() {
                       location: { ...profile.location, state: e.target.value },
                     })
                   }
-                  className="mt-1"
+                  className="w-full h-10 px-3 mt-2 bg-transparent border border-border text-sm focus:outline-none focus:border-foreground"
                 />
               </div>
             </div>
             <div>
-              <label className="text-sm text-muted-foreground">Phone</label>
-              <Input
+              <label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Phone
+              </label>
+              <input
+                type="text"
                 value={profile.phone}
                 onChange={(e) =>
                   setProfile({ ...profile, phone: e.target.value })
                 }
-                className="mt-1"
+                className="w-full h-10 px-3 mt-2 bg-transparent border border-border text-sm font-mono focus:outline-none focus:border-foreground"
               />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Preference Weights */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Vendor Preferences</CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
+        {/* Vendor Preferences */}
+        <div className="border-b border-border">
+          <div className="px-8 py-4 border-b border-border flex items-center justify-between">
+            <h2 className="section-header">Vendor Preferences</h2>
+            <button
+              className="fill-hover px-3 py-1.5 text-xs uppercase tracking-wider flex items-center gap-1 border border-border"
               onClick={handleResetWeights}
-              className="h-8"
             >
-              <RotateCcw className="h-3 w-3 mr-1" />
-              Reset
-            </Button>
-          </CardHeader>
-          <CardContent>
+              <RotateCcw className="h-3 w-3 relative z-10" />
+              <span className="relative z-10">Reset</span>
+            </button>
+          </div>
+          <div className="px-8 py-6">
             <PreferenceControls weights={weights} onUpdate={handleWeightUpdate} />
             <p className="text-xs text-muted-foreground mt-4">
               These weights determine how vendors are ranked. Weights always sum to 100%.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Budget Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Budget Settings</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="border-b border-border">
+          <div className="px-8 py-4 border-b border-border">
+            <h2 className="section-header">Budget Settings</h2>
+          </div>
+          <div className="px-8 py-6 space-y-4">
             <div>
-              <label className="text-sm text-muted-foreground">
+              <label className="text-xs uppercase tracking-wider text-muted-foreground">
                 Default Order Budget
               </label>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-2">
                 <span className="text-muted-foreground">$</span>
-                <Input
+                <input
                   type="number"
                   value={budget.defaultOrder}
                   onChange={(e) =>
                     setBudget({ ...budget, defaultOrder: e.target.value })
                   }
-                  className="max-w-32"
+                  className="w-32 h-10 px-3 bg-transparent border border-border text-sm font-mono focus:outline-none focus:border-foreground"
                 />
               </div>
             </div>
             <div>
-              <label className="text-sm text-muted-foreground">
+              <label className="text-xs uppercase tracking-wider text-muted-foreground">
                 Monthly Spending Limit
               </label>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-2">
                 <span className="text-muted-foreground">$</span>
-                <Input
+                <input
                   type="number"
                   value={budget.monthlyLimit}
                   onChange={(e) =>
                     setBudget({ ...budget, monthlyLimit: e.target.value })
                   }
-                  className="max-w-32"
+                  className="w-32 h-10 px-3 bg-transparent border border-border text-sm font-mono focus:outline-none focus:border-foreground"
                 />
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Separator />
+          </div>
+        </div>
 
         {/* Save Button */}
-        <Button onClick={handleSave} className="w-full">
-          <Save className="h-4 w-4 mr-2" />
-          Save Settings
-        </Button>
+        <div className="border-b border-border">
+          <button
+            onClick={handleSave}
+            className="fill-hover w-full h-14 flex items-center justify-center gap-2 text-sm font-medium uppercase tracking-wider"
+          >
+            <Save className="h-4 w-4 relative z-10" />
+            <span className="relative z-10">Save Settings</span>
+          </button>
+        </div>
 
         {/* Data Management */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Data Management</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button variant="outline" className="w-full justify-start">
-              Export Order History (CSV)
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start text-destructive hover:text-destructive"
+        <div>
+          <div className="px-8 py-4 border-b border-border">
+            <h2 className="section-header">Data Management</h2>
+          </div>
+          <div className="stagger-children">
+            <button className="fill-hover w-full flex items-center gap-3 px-8 py-4 border-b border-border text-sm text-left">
+              <Download className="h-4 w-4 relative z-10" />
+              <span className="relative z-10">Export Order History (CSV)</span>
+            </button>
+            <button
+              className="fill-hover-destructive w-full flex items-center gap-3 px-8 py-4 border-b border-border text-sm text-left text-destructive"
               onClick={() => {
                 setWeights(defaultWeights);
                 toast.success("Preference data cleared");
               }}
             >
-              Clear Preference Learning Data
-            </Button>
-          </CardContent>
-        </Card>
+              <Trash2 className="h-4 w-4 relative z-10" />
+              <span className="relative z-10">Clear Preference Learning Data</span>
+            </button>
+          </div>
+        </div>
       </div>
     </>
   );

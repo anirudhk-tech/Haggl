@@ -2,10 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Header } from "@/components/layout/nav";
 import { VendorRadarChart } from "@/components/vendors/radar-chart";
 import { PreferenceControls } from "@/components/vendors/preference-controls";
@@ -19,6 +16,8 @@ import {
   MapPin,
   Star,
   Package,
+  ArrowUpRight,
+  RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -43,11 +42,14 @@ export default function VendorProfilePage() {
     return (
       <>
         <Header title="Vendor" />
-        <div className="p-6 text-center">
+        <div className="p-8 text-center">
           <p className="text-muted-foreground">Vendor not found</p>
-          <Button asChild variant="link" className="mt-2">
-            <Link href="/vendors">Back to vendors</Link>
-          </Button>
+          <Link
+            href="/vendors"
+            className="fill-hover inline-flex items-center mt-4 px-4 py-2 text-sm border border-border"
+          >
+            <span className="relative z-10">Back to vendors</span>
+          </Link>
         </div>
       </>
     );
@@ -81,55 +83,63 @@ export default function VendorProfilePage() {
     });
   };
 
+  const handleReset = () => {
+    setWeights(defaultWeights);
+    toast.success("Preferences reset to defaults");
+  };
+
   return (
     <>
       <Header title={vendor.vendor_name} />
-      <div className="p-6 space-y-6 animate-fade-in">
-        {/* Back Link (Desktop) */}
-        <div className="hidden md:block">
-          <Button asChild variant="ghost" size="sm" className="-ml-2">
-            <Link href="/vendors">
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Back to vendors
-            </Link>
-          </Button>
-        </div>
+      <div className="animate-fade-in">
+        {/* Page Header */}
+        <header className="hidden md:block px-8 py-8 border-b border-border">
+          <Link
+            href="/vendors"
+            className="fill-hover inline-flex items-center gap-2 px-3 py-1.5 text-xs uppercase tracking-wider border border-border mb-6"
+          >
+            <ArrowLeft className="h-3 w-3 relative z-10" />
+            <span className="relative z-10">Back</span>
+          </Link>
+          <h1 className="page-header">{vendor.vendor_name}</h1>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {vendor.certifications.map((cert) => (
+              <Badge
+                key={cert}
+                variant="outline"
+                className="text-[10px] uppercase tracking-wider border-border"
+              >
+                {cert}
+              </Badge>
+            ))}
+          </div>
+        </header>
 
-        {/* Vendor Header */}
-        <div className="flex flex-col md:flex-row gap-6">
-          {/* Radar Chart */}
-          <Card className="md:w-80">
-            <CardContent className="pt-6">
-              <VendorRadarChart scores={vendor.scores} size="lg" />
-              <div className="text-center mt-4">
-                <span className="text-3xl font-semibold text-primary">
-                  {finalScore.toFixed(1)}
-                </span>
-                <p className="text-sm text-muted-foreground">Final Score</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Vendor Info */}
-          <div className="flex-1 space-y-4">
-            <div>
-              <h1 className="text-2xl font-semibold">{vendor.vendor_name}</h1>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {vendor.certifications.map((cert) => (
-                  <Badge key={cert} variant="secondary">
-                    {cert}
-                  </Badge>
-                ))}
-              </div>
+        {/* Main Content Grid */}
+        <div className="grid md:grid-cols-3 border-b border-border">
+          {/* Radar Chart Section */}
+          <div className="md:col-span-1 px-8 py-8 border-b md:border-b-0 md:border-r border-border">
+            <VendorRadarChart scores={vendor.scores} size="lg" />
+            <div className="text-center mt-6">
+              <span className="text-5xl font-medium tracking-tight font-mono">
+                {finalScore.toFixed(1)}
+              </span>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mt-2">
+                Final Score
+              </p>
             </div>
+          </div>
 
+          {/* Contact & Products */}
+          <div className="md:col-span-2">
             {/* Contact Info */}
-            <Card>
-              <CardContent className="p-4 space-y-3">
+            <div className="px-8 py-6 border-b border-border">
+              <h2 className="section-header mb-4">Contact</h2>
+              <div className="space-y-3">
                 {vendor.phone && (
                   <div className="flex items-center gap-3 text-sm">
                     <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{vendor.phone}</span>
+                    <span className="font-mono">{vendor.phone}</span>
                   </div>
                 )}
                 {vendor.email && (
@@ -150,7 +160,7 @@ export default function VendorProfilePage() {
                     <span>
                       {vendor.address}
                       {vendor.distance_miles && (
-                        <span className="text-muted-foreground">
+                        <span className="text-muted-foreground font-mono">
                           {" "}
                           ({vendor.distance_miles.toFixed(1)} mi)
                         </span>
@@ -158,39 +168,45 @@ export default function VendorProfilePage() {
                     </span>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
             {/* Products */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  Products
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex flex-wrap gap-2">
-                  {vendor.products.map((product) => (
-                    <Badge key={product} variant="outline">
-                      {product}
-                    </Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="px-8 py-6">
+              <h2 className="section-header flex items-center gap-2 mb-4">
+                <Package className="h-4 w-4" />
+                Products
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {vendor.products.map((product) => (
+                  <Badge
+                    key={product}
+                    variant="outline"
+                    className="text-xs border-border"
+                  >
+                    {product}
+                  </Badge>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
-        <Separator />
-
-        {/* Preference Learning */}
-        <div className="grid md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Adjust Preferences</CardTitle>
-            </CardHeader>
-            <CardContent>
+        {/* Preference Learning Section */}
+        <div className="grid md:grid-cols-2 border-b border-border">
+          {/* Adjust Preferences */}
+          <div className="border-b md:border-b-0 md:border-r border-border">
+            <div className="px-8 py-4 border-b border-border flex items-center justify-between">
+              <h2 className="section-header">Adjust Preferences</h2>
+              <button
+                className="fill-hover px-3 py-1.5 text-xs uppercase tracking-wider flex items-center gap-1 border border-border"
+                onClick={handleReset}
+              >
+                <RotateCcw className="h-3 w-3 relative z-10" />
+                <span className="relative z-10">Reset</span>
+              </button>
+            </div>
+            <div className="px-8 py-6">
               <PreferenceControls
                 weights={weights}
                 onUpdate={handleWeightUpdate}
@@ -198,66 +214,69 @@ export default function VendorProfilePage() {
               <p className="text-xs text-muted-foreground mt-4">
                 Your preferences affect how all vendors are ranked.
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Score Breakdown</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Quality</span>
-                <span className="font-medium">{vendor.scores.quality}</span>
+          {/* Score Breakdown */}
+          <div>
+            <div className="px-8 py-4 border-b border-border">
+              <h2 className="section-header">Score Breakdown</h2>
+            </div>
+            <div className="px-8 py-6 space-y-3">
+              <div className="flex justify-between text-sm py-2 border-b border-border">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">Quality</span>
+                <span className="font-mono">{vendor.scores.quality}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Affordability</span>
-                <span className="font-medium">{vendor.scores.affordability}</span>
+              <div className="flex justify-between text-sm py-2 border-b border-border">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">Affordability</span>
+                <span className="font-mono">{vendor.scores.affordability}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Shipping</span>
-                <span className="font-medium">{vendor.scores.shipping}</span>
+              <div className="flex justify-between text-sm py-2 border-b border-border">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">Shipping</span>
+                <span className="font-mono">{vendor.scores.shipping}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Reliability</span>
-                <span className="font-medium">{vendor.scores.reliability}</span>
+              <div className="flex justify-between text-sm py-2 border-b border-border">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">Reliability</span>
+                <span className="font-mono">{vendor.scores.reliability}</span>
               </div>
-              <Separator />
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Embedding Score</span>
-                <span className="font-medium">{vendor.embedding_score.toFixed(2)}</span>
+              <div className="flex justify-between text-sm py-2 border-b border-border">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">Embedding Score</span>
+                <span className="font-mono">{vendor.embedding_score.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Parameter Score</span>
-                <span className="font-medium">{parameterScore.toFixed(2)}</span>
+              <div className="flex justify-between text-sm py-2 border-b border-border">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">Parameter Score</span>
+                <span className="font-mono">{parameterScore.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-sm font-medium">
-                <span>Final Score</span>
-                <span className="text-primary">{finalScore.toFixed(1)}</span>
+              <div className="flex justify-between text-sm py-2 font-medium">
+                <span className="text-xs uppercase tracking-wider">Final Score</span>
+                <span className="font-mono text-lg">{finalScore.toFixed(1)}</span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
         {/* Order History */}
         {vendorOrders.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
+          <div className="border-b border-border">
+            <div className="px-8 py-4 border-b border-border">
+              <h2 className="section-header flex items-center gap-2">
                 <Star className="h-4 w-4" />
                 Order History
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {vendorOrders.map((order) => (
-                  <Link
-                    key={order.order_id}
-                    href={`/order/${order.order_id}`}
-                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-secondary/30 transition-colors"
-                  >
+              </h2>
+            </div>
+            <div className="stagger-children">
+              {vendorOrders.map((order, index) => (
+                <Link
+                  key={order.order_id}
+                  href={`/order/${order.order_id}`}
+                  className="fill-hover flex items-center justify-between px-8 py-4 border-b border-border last:border-0 group"
+                >
+                  <div className="flex items-center gap-4 relative z-10">
+                    <span className="text-xs text-muted-foreground w-6 font-mono">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
                     <div>
-                      <p className="font-medium text-sm">#{order.order_id}</p>
+                      <p className="font-medium text-sm font-mono">#{order.order_id}</p>
                       <p className="text-xs text-muted-foreground">
                         {order.ingredients
                           .filter((i) => i.vendor_name === vendor.vendor_name)
@@ -265,27 +284,34 @@ export default function VendorProfilePage() {
                           .join(", ")}
                       </p>
                     </div>
-                    <Badge variant="outline">{order.status}</Badge>
-                  </Link>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  </div>
+                  <div className="flex items-center gap-4 relative z-10">
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-wider border-border">
+                      {order.status}
+                    </Badge>
+                    <ArrowUpRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Action Buttons */}
-        <div className="flex gap-3">
-          <Button asChild className="flex-1">
-            <Link href={`/order/new?vendor=${vendor.vendor_id}`}>
-              Place Order
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <a href={`tel:${vendor.phone}`}>
-              <Phone className="h-4 w-4 mr-2" />
-              Call
-            </a>
-          </Button>
+        <div className="flex border-b border-border">
+          <Link
+            href={`/order/new?vendor=${vendor.vendor_id}`}
+            className="fill-hover flex-1 flex items-center justify-center h-14 text-sm font-medium uppercase tracking-wider border-r border-border"
+          >
+            <span className="relative z-10">Place Order</span>
+          </Link>
+          <a
+            href={`tel:${vendor.phone}`}
+            className="fill-hover flex items-center justify-center h-14 px-8 text-sm font-medium uppercase tracking-wider gap-2"
+          >
+            <Phone className="h-4 w-4 relative z-10" />
+            <span className="relative z-10">Call</span>
+          </a>
         </div>
       </div>
     </>
