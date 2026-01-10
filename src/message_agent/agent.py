@@ -17,7 +17,7 @@ from .schemas import (
     ConversationState,
     MessageRole,
 )
-from .tools import send_sms
+from .tools import send_sms, place_order_with_updates, PLACE_ORDER_FUNCTION
 
 logger = logging.getLogger(__name__)
 
@@ -26,16 +26,20 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 # System prompt for the message agent
-SYSTEM_PROMPT = """You are a helpful assistant for Haggl, a platform that helps 
-restaurants and bakeries order ingredients from local vendors.
+SYSTEM_PROMPT = """You are Haggl, an AI assistant that helps restaurant and bakery owners order ingredients from local vendors.
 
-You can help users with:
-- Getting information about available vendors
-- Checking order status
-- Answering questions about pricing and delivery
-- General inquiries about our service
+When a user wants to order something:
+1. Ask clarifying questions if needed (quantity, timeline)
+2. Use the place_order function to call a vendor and place the order
+3. Let them know you're calling the vendor
 
-Keep responses concise and friendly - remember this is SMS, so be brief!
+EXAMPLE:
+User: "I need eggs"
+You: "How many dozen do you need?"
+User: "20 dozen"
+You: *calls place_order* "Got it! I'm calling the vendor now to order 20 dozen eggs. I'll update you once I hear back!"
+
+Keep messages SHORT - this is SMS/WhatsApp. Be friendly and efficient.
 """
 
 
@@ -115,7 +119,7 @@ class MessageAgent:
     
     async def _generate_response(self, conversation: ConversationState) -> str:
         """
-        Generate a response using OpenAI.
+        Generate a response using OpenAI with function calling.
         
         Args:
             conversation: Current conversation state with history
@@ -128,16 +132,59 @@ class MessageAgent:
             return self._stub_response(conversation)
         
         try:
+            import json
             client = self._get_openai_client()
             messages = [
                 {"role": msg.role.value, "content": msg.content}
                 for msg in conversation.messages
             ]
+            
+            # Call OpenAI with tools
             response = client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=messages,
+                tools=[PLACE_ORDER_FUNCTION],
+                tool_choice="auto",
             )
-            return response.choices[0].message.content
+            
+            assistant_message = response.choices[0].message
+            
+            # Check if OpenAI wants to call a function
+            if assistant_message.tool_calls:
+                tool_call = assistant_message.tool_calls[0]
+                function_name = tool_call.function.name
+                function_args = json.loads(tool_call.function.arguments)
+                
+                logger.info(f"OpenAI wants to call: {function_name}({function_args})")
+                
+                if function_name == "place_order":
+                    import asyncio
+                    
+                    # Create callback to send status updates via WhatsApp
+                    async def send_status_update(message: str):
+                        await self.send_response(conversation.phone_number, message)
+                    
+                    # Start the order in background - don't wait for completion
+                    asyncio.create_task(
+                        place_order_with_updates(
+                            product=function_args.get("product", "eggs"),
+                            quantity=function_args.get("quantity", 1),
+                            unit=function_args.get("unit", "dozen"),
+                            business_name="Customer Business",
+                            vendor_phone=conversation.phone_number,  # Call user's number for testing
+                            on_status_update=send_status_update,
+                        )
+                    )
+                    
+                    # Return immediate acknowledgment - status updates come via callback
+                    product = function_args.get("product", "eggs")
+                    quantity = function_args.get("quantity", 1)
+                    unit = function_args.get("unit", "dozen")
+                    return f"On it! Placing order for {quantity} {unit} of {product}. I'll send you updates as the call progresses."
+            
+            # No function call, return regular response
+            return assistant_message.content or ""
+            
         except Exception as e:
             logger.exception(f"OpenAI API error: {e}")
             return self._stub_response(conversation)

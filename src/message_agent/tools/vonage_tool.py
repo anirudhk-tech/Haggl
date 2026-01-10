@@ -1,10 +1,8 @@
-"""Vonage SMS tool for the Message Agent."""
+"""Vonage WhatsApp tool for the Message Agent."""
 
 import os
 import logging
-from functools import lru_cache
-
-import vonage
+import httpx
 
 from ..schemas import OutgoingSMS
 
@@ -15,30 +13,21 @@ VONAGE_SANDBOX_URL = "https://messages-sandbox.nexmo.com/v1/messages"
 VONAGE_PRODUCTION_URL = "https://api.nexmo.com/v1/messages"
 
 
-def _get_vonage_config() -> tuple[str | None, str | None, str | None]:
+def _get_vonage_config() -> dict:
     """Get Vonage configuration from environment."""
-    return (
-        os.getenv("VONAGE_API_KEY"),
-        os.getenv("VONAGE_API_SECRET"),
-        os.getenv("VONAGE_PHONE_NUMBER"),
-    )
-
-
-@lru_cache(maxsize=1)
-def _get_vonage_client() -> vonage.Client | None:
-    """Get or create Vonage client (cached)."""
-    api_key, api_secret, _ = _get_vonage_config()
-    
-    if not api_key or not api_secret:
-        logger.warning("Vonage credentials not configured")
-        return None
-    
-    return vonage.Client(key=api_key, secret=api_secret)
+    return {
+        "api_key": os.getenv("VONAGE_API_KEY"),
+        "api_secret": os.getenv("VONAGE_API_SECRET"),
+        "whatsapp_number": os.getenv("VONAGE_WHATSAPP_NUMBER"),
+        "sandbox": os.getenv("VONAGE_SANDBOX", "true").lower() == "true",
+    }
 
 
 async def send_sms(message: OutgoingSMS) -> dict:
     """
-    Send an SMS via Vonage.
+    Send a WhatsApp message via Vonage Messages API.
+    
+    Uses sandbox endpoint by default. Set VONAGE_SANDBOX=false for production.
     
     Args:
         message: OutgoingSMS with to_number and body
@@ -46,45 +35,69 @@ async def send_sms(message: OutgoingSMS) -> dict:
     Returns:
         dict with message_id, status, or error
     """
-    api_key, api_secret, phone_number = _get_vonage_config()
+    config = _get_vonage_config()
+    
+    api_key = config["api_key"]
+    api_secret = config["api_secret"]
+    whatsapp_number = config["whatsapp_number"]
+    use_sandbox = config["sandbox"]
     
     if not api_key or not api_secret:
-        return {"error": "Vonage credentials not configured", "message_id": None}
+        return {"error": "Vonage API credentials not configured", "message_id": None}
     
-    if not phone_number:
-        return {"error": "VONAGE_PHONE_NUMBER not configured", "message_id": None}
+    if not whatsapp_number:
+        return {"error": "VONAGE_WHATSAPP_NUMBER not configured", "message_id": None}
     
-    client = _get_vonage_client()
-    if not client:
-        return {"error": "Failed to initialize Vonage client", "message_id": None}
+    # Choose endpoint
+    url = VONAGE_SANDBOX_URL if use_sandbox else VONAGE_PRODUCTION_URL
+    
+    # Remove + from phone numbers
+    to_number = message.to_number.replace("+", "")
+    from_number = whatsapp_number.replace("+", "")
+    
+    logger.info(f"Sending WhatsApp to {to_number}")
+    
+    # Build request payload
+    payload = {
+        "from": from_number,
+        "to": to_number,
+        "message_type": "text",
+        "text": message.body,
+        "channel": "whatsapp",
+    }
     
     try:
-        sms = vonage.Sms(client)
-        response = sms.send_message({
-            "from": phone_number,
-            "to": message.to_number.replace("+", ""),  # Vonage doesn't want the +
-            "text": message.body,
-        })
-        
-        # Check response status
-        if response["messages"][0]["status"] == "0":
-            message_id = response["messages"][0]["message-id"]
-            logger.info(f"SMS sent to {message.to_number}, ID: {message_id}")
-            return {
-                "message_id": message_id,
-                "status": "sent",
-                "error": None,
-            }
-        else:
-            error_text = response["messages"][0].get("error-text", "Unknown error")
-            logger.error(f"Failed to send SMS: {error_text}")
-            return {
-                "error": error_text,
-                "message_id": None,
-            }
-        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                json=payload,
+                auth=(api_key, api_secret),
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                timeout=30.0,
+            )
+            
+            if response.status_code in (200, 201, 202):
+                data = response.json()
+                message_uuid = data.get("message_uuid")
+                logger.info(f"WhatsApp sent to {message.to_number}, ID: {message_uuid}")
+                return {
+                    "message_id": message_uuid,
+                    "status": "sent",
+                    "error": None,
+                }
+            else:
+                error_text = response.text
+                logger.error(f"Vonage API error {response.status_code}: {error_text}")
+                return {
+                    "error": f"Vonage API error {response.status_code}: {error_text}",
+                    "message_id": None,
+                }
+                
     except Exception as e:
-        logger.exception(f"Failed to send SMS to {message.to_number}: {e}")
+        logger.exception(f"Failed to send WhatsApp to {message.to_number}: {e}")
         return {
             "error": str(e),
             "message_id": None,
@@ -97,7 +110,7 @@ def verify_webhook_signature(request_body: bytes, signature: str) -> bool:
     
     Args:
         request_body: Raw request body bytes
-        signature: X-Vonage-Signature header value
+        signature: Signature header value
         
     Returns:
         bool indicating if signature is valid
