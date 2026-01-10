@@ -77,13 +77,22 @@ class CallingAgent:
             # Step 1: Initiate the call
             self._transition(AgentState.CALL_IN_PROGRESS)
             
+            # Convert order context to items list format
+            items = [{
+                "product": request.order_context.product,
+                "quantity": request.order_context.quantity,
+                "unit": request.order_context.unit,
+            }]
+            
+            # Get delivery address from order context, or use a default
+            delivery_address = request.order_context.delivery_address or "Address to be confirmed"
+            
             call_input = CallVendorInput(
                 phone_number=request.vendor.phone,
                 vendor_name=request.vendor.name,
                 business_name=request.order_context.business_name,
-                product=request.order_context.product,
-                quantity=request.order_context.quantity,
-                unit=request.order_context.unit,
+                items=items,
+                delivery_address=delivery_address,
             )
             
             logger.info(f"Initiating call to {request.vendor.name} at {request.vendor.phone}")

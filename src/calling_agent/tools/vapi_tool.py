@@ -13,29 +13,48 @@ VAPI_PHONE_NUMBER_ID = os.getenv("VAPI_PHONE_NUMBER_ID")
 VAPI_BASE_URL = "https://api.vapi.ai"
 
 
-def get_system_prompt(business_name: str, product: str, quantity: int, unit: str) -> str:
+def get_system_prompt(
+    business_name: str,
+    items: list[dict],
+    delivery_address: str,
+) -> str:
     """Generate the system prompt for the AI caller."""
-    return f"""You are a professional procurement agent calling on behalf of {business_name}, a local bakery.
+    items_text = "\n".join(
+        f"- {it['quantity']} {it['unit']} {it['product']}"
+        for it in items
+    )
 
-YOUR GOALS:
-1. Confirm that the vendor has {quantity} {unit} of {product} available
-2. Ask for their current price per {unit}
-3. If the price seems reasonable, confirm the order
-4. Get an estimated delivery or pickup time
-5. Thank them and confirm the order details
+    return f"""You are Hank, a professional procurement agent calling on behalf of {business_name}.
 
-CONVERSATION GUIDELINES:
-- Keep responses concise (1-2 sentences)
-- Be professional and friendly
-- If they offer a price, you can ask "Is there any bulk discount for an order this size?"
-- Accept reasonable prices - don't haggle excessively
+CONTEXT:
+- This call is for delivered pricing and availability only.
+- You are NOT placing the final order on this call.
+- The vendor will hold the details for a brief callback.
 
-BEFORE ENDING, CONFIRM:
-- Total quantity: {quantity} {unit}
-- Price per {unit}
-- Pickup/delivery time
+DELIVERY ADDRESS:
+{delivery_address}
 
-If they cannot fulfill the order, thank them politely and end the call."""
+LINE ITEMS:
+{items_text}
+
+YOUR GOALS (FAST, IN THIS ORDER):
+1) Confirm they can deliver to the address and that the delivery timing works.
+2) Go line-by-line and collect delivered pricing:
+   - Confirm availability for each item and the delivered price per unit or delivered line total.
+   - If an item cannot be fully fulfilled, collect the available quantity and delivered price for that quantity.
+3) Ask once: "Do you offer contractor or bulk pricing for an order of this size?"
+4) Ask for the ALL-IN delivered total for the order (including delivery and all fees).
+5) Close with a soft hold and identifier:
+   - "I just need to confirm a couple details internally and I'll call you back shortly to confirm the order—does that work?"
+   - "Please note it under Hank at Haggl. For your notes, the email is hank@haggl.com."
+
+CONVERSATION RULES:
+- Keep responses to 1–2 sentences.
+- Be direct and professional.
+- Do not negotiate repeatedly.
+- Do not discuss payment.
+- Before ending, briefly repeat the line-item prices and the all-in delivered total.
+"""
 
 
 async def call_vendor(input_data: CallVendorInput) -> dict:
@@ -51,16 +70,15 @@ async def call_vendor(input_data: CallVendorInput) -> dict:
         return {"error": "VAPI_PHONE_NUMBER_ID not configured", "call_id": None}
     
     first_message = (
-        f"Hi, I'm calling on behalf of {input_data.business_name}. "
-        f"We're looking to place an order for {input_data.quantity} {input_data.unit} "
-        f"of {input_data.product} and wanted to discuss pricing."
+        f"Hi, this is Hank calling on behalf of {input_data.business_name}. "
+        f"I'm looking for delivered availability and pricing to {input_data.delivery_address}. "
+        f"Can I run through a few line items and get an all-in delivered total?"
     )
     
     system_prompt = get_system_prompt(
         input_data.business_name,
-        input_data.product,
-        input_data.quantity,
-        input_data.unit
+        input_data.items,
+        input_data.delivery_address
     )
     
     payload = {
@@ -87,8 +105,8 @@ async def call_vendor(input_data: CallVendorInput) -> dict:
         },
         "metadata": {
             "business_name": input_data.business_name,
-            "product": input_data.product,
-            "quantity": str(input_data.quantity),
+            "items": json.dumps(input_data.items),
+            "delivery_address": input_data.delivery_address,
         },
     }
     

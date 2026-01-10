@@ -22,6 +22,7 @@ class OrderContext(BaseModel):
     product: str = Field(default="eggs", description="Product being ordered")
     quantity: int = Field(description="Quantity in dozens")
     unit: str = Field(default="dozen", description="Unit of measurement")
+    delivery_address: Optional[str] = Field(default=None, description="Delivery address for the order")
 
 
 class VendorInfo(BaseModel):
@@ -39,9 +40,8 @@ class CallVendorInput(BaseModel):
     phone_number: str = Field(description="Vendor phone number in E.164 format")
     vendor_name: str = Field(description="Name of the vendor being called")
     business_name: str = Field(description="Name of the business placing the order")
-    product: str = Field(description="Product being ordered (e.g., 'eggs')")
-    quantity: int = Field(description="Quantity needed")
-    unit: str = Field(default="dozen", description="Unit of measurement")
+    items: list[dict] = Field(description="List of items to order, each with 'product', 'quantity', and 'unit' keys")
+    delivery_address: str = Field(description="Delivery address for the order")
 
 
 class CallOutcome(BaseModel):
