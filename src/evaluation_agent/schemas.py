@@ -66,17 +66,17 @@ class VendorEvaluation(BaseModel):
     vendor_id: str
     vendor_name: str
     scores: VendorScores
-    embedding_score: float = Field(ge=0, le=1)
+    embedding_score: float  # Can be negative (cosine similarity range: -1 to 1)
     parameter_score: float = Field(ge=0, le=1)
-    final_score: float = Field(ge=0, le=1)
+    final_score: float  # Can vary based on embedding contribution
     rank: Optional[int] = None
 
 
 class FeedbackRequest(BaseModel):
-    """User feedback on a vendor evaluation."""
-    vendor_id: str
+    """User feedback on preference adjustment."""
     parameter: EvaluationParameter
     direction: FeedbackDirection
+    vendor_id: Optional[str] = None  # Optional - for tracking which vendor triggered feedback
 
 
 class FeedbackRecord(BaseModel):
@@ -103,7 +103,7 @@ class EvaluationRequest(BaseModel):
     """Request to evaluate vendors."""
     business_id: str
     budget: float = Field(gt=0)
-    ingredients: list[str] = Field(min_length=1)
+    ingredients: list[str] = Field(default_factory=list)  # Empty = all vendors
 
 
 class EvaluationResponse(BaseModel):
