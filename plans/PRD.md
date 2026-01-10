@@ -1,17 +1,20 @@
 # Product Requirements Document
-## IngredientAI - Autonomous B2B Procurement Platform
+## Haggl - Autonomous B2B Procurement Platform
 
-**Version:** 1.0
-**Date:** January 9, 2026
+**Version:** 2.0
+**Date:** January 10, 2026
 **Hackathon:** MongoDB Agentic Orchestration & Collaboration (8 hours)
 
 ---
 
 ## Executive Summary
 
-IngredientAI is a multi-agent AI system that autonomously sources, negotiates, evaluates, and pays for business ingredients and supplies. A business owner (baker, restaurant, manufacturer) inputs their ingredient needs, quantities, and budget. Four specialized agents work **concurrently** to find the best suppliers, negotiate prices via real phone calls, evaluate options, and process payments using the x402 protocol.
+Haggl is a multi-agent AI system that autonomously sources, negotiates, evaluates, and pays for business ingredients and supplies. A business owner (baker, restaurant, manufacturer) inputs their ingredient needs via **menu upload, CSV import, or SMS text**, and sets their budget. Four specialized agents work **concurrently** to find the best suppliers, negotiate prices via real phone calls, evaluate options, and process payments using the x402 protocol.
 
-**Core Innovation:** Real-time phone negotiations via Vapi TTS combined with autonomous x402 payments - AI agents that can both negotiate verbally AND pay autonomously.
+**Core Innovations:**
+1. **Real-time phone negotiations** via Vapi TTS combined with autonomous x402 payments
+2. **SMS-based ordering and approvals** - Business owners can text to re-order, place new orders, or approve/deny purchases
+3. **Flexible ingredient ingestion** - Upload menu, import CSV, or text ingredient lists
 
 ---
 
@@ -39,14 +42,34 @@ IngredientAI is a multi-agent AI system that autonomously sources, negotiates, e
 - Spends 6 hours/week on sourcing and ordering
 - Rarely negotiates (doesn't have time)
 - Wants better prices but can't sacrifice quality
+- **Always on the go** - needs to manage orders from her phone via SMS
+- **Re-orders weekly** - same ingredients, wants one-text reordering
 
 ---
 
-## Solution: Four Concurrent Agents
+## Solution: Four Concurrent Agents + SMS Interface
+
+### Input Methods
+
+**1. Menu Upload** (PDF, text, or pasted)
+- Haggl infers ingredient list + estimated volumes from menu items
+
+**2. CSV Import** (New!)
+- Upload spreadsheet with columns: `ingredient`, `quantity`, `unit`, `quality` (optional)
+- Example: `flour,500,lbs,organic` or `eggs,1000,units,cage-free`
+- Supports bulk import of entire inventory lists
+
+**3. SMS Texting** (New!)
+- Text the Haggl bot to:
+  - **Re-order**: "Reorder last week's flour" → Repeats previous order
+  - **New order**: "Order 500 lbs organic flour" → Starts new procurement
+  - **Approve/Deny**: Reply "APPROVE" or "DENY" to purchase confirmations
+  - **Check status**: "Status" → Get order progress update
 
 ```
 BUSINESS OWNER INPUT
 ├── Ingredients needed (eggs, flour, sugar, butter)
+│   └── Via: Menu upload | CSV import | SMS text
 ├── Quantities required (500 lbs, 1000 units, etc.)
 ├── Quality requirements (organic, grade A, etc.)
 ├── Budget constraint ($2,000)
@@ -325,6 +348,126 @@ X-Payment-Memo: BAYAREA_INV_2026_0192
 
 ---
 
+## SMS Bot Interface (Twilio)
+
+**Technology:** Twilio SMS + Claude API
+
+**Purpose:** Enable business owners to interact with Haggl via text message
+
+### SMS Commands
+
+| Command | Example | Action |
+|---------|---------|--------|
+| **New Order** | "Order 500 lbs flour" | Start new procurement for specified ingredients |
+| **Re-order** | "Reorder flour" | Repeat last order for that ingredient |
+| **Re-order All** | "Reorder last week" | Repeat entire previous order |
+| **Approve** | "APPROVE" or "YES" | Approve pending purchase |
+| **Deny** | "DENY" or "NO" | Reject pending purchase |
+| **Status** | "Status" | Get current order progress |
+| **Budget** | "Budget" | Check remaining budget |
+| **Help** | "Help" | List available commands |
+
+### SMS Flow Examples
+
+**Re-order Flow:**
+```
+Owner: "Reorder flour"
+Haggl: "Found last order: 500 lbs all-purpose flour from Bay Area Foods @ $0.425/lb ($212.50 total). Reorder? Reply APPROVE or DENY"
+Owner: "APPROVE"
+Haggl: "✓ Order placed! ETA: Jan 12. Tracking: #HGL-2026-0192"
+```
+
+**New Order Flow:**
+```
+Owner: "Order 1000 eggs cage-free"
+Haggl: "Searching suppliers for 1000 cage-free eggs..."
+Haggl: "Best deal: Farm Fresh Eggs @ $0.50/egg ($500 total, 9% below market). Approve? Reply APPROVE or DENY"
+Owner: "APPROVE"
+Haggl: "✓ Order placed! x402 TX: 0x8f3e... Payment complete."
+```
+
+**Approval Flow (for large purchases):**
+```
+Haggl: "⚠️ Large purchase requires approval: $1,847.50 across 4 vendors. Reply APPROVE to proceed or DENY to cancel."
+Owner: "APPROVE"
+Haggl: "✓ Processing 4 payments via x402..."
+```
+
+### SMS Integration
+
+```python
+# Twilio webhook endpoint
+@app.post("/sms/webhook")
+async def handle_sms(From: str, Body: str):
+    """Process incoming SMS from business owner"""
+
+    # Parse intent using Claude
+    intent = await parse_sms_intent(Body)
+
+    if intent["type"] == "reorder":
+        return await handle_reorder(From, intent["ingredient"])
+    elif intent["type"] == "new_order":
+        return await handle_new_order(From, intent["items"])
+    elif intent["type"] == "approve":
+        return await handle_approval(From, approved=True)
+    elif intent["type"] == "deny":
+        return await handle_approval(From, approved=False)
+    elif intent["type"] == "status":
+        return await get_order_status(From)
+```
+
+**MongoDB Collection:** `sms_conversations`, `pending_approvals`
+
+---
+
+## CSV Ingredient Ingestion
+
+**Purpose:** Allow bulk import of ingredients from spreadsheets
+
+### CSV Format
+
+```csv
+ingredient,quantity,unit,quality,priority
+All-purpose flour,500,lbs,commercial grade,high
+Eggs,1000,units,cage-free Grade A,high
+Butter,100,lbs,unsalted,medium
+Sugar,200,lbs,granulated,low
+```
+
+### CSV Processing
+
+```python
+import csv
+from io import StringIO
+
+async def process_ingredient_csv(csv_content: str) -> list:
+    """Parse CSV and return structured ingredient list"""
+
+    reader = csv.DictReader(StringIO(csv_content))
+    ingredients = []
+
+    for row in reader:
+        ingredients.append({
+            "name": row["ingredient"],
+            "quantity": f"{row['quantity']} {row['unit']}",
+            "quality": row.get("quality", "standard"),
+            "priority": row.get("priority", "medium")
+        })
+
+    return ingredients
+```
+
+### Supported CSV Sources
+
+- **Direct upload** via web dashboard
+- **Google Sheets** integration (export as CSV)
+- **Email attachment** - Forward CSV to orders@haggl.ai
+- **SMS** - Text "Import CSV" and receive upload link
+
+**MongoDB Collection:** `csv_imports`, `ingredient_templates`
+
+---
+
 ## Tech Stack
 
 | Component | Technology | Purpose |
@@ -333,11 +476,12 @@ X-Payment-Memo: BAYAREA_INV_2026_0192
 | AI/LLM | Claude API | Reasoning, extraction, vision |
 | Web Search | Exa.ai | Semantic supplier search |
 | Voice AI | Vapi | Phone calls and TTS |
+| **SMS** | **Twilio** | **SMS ordering & approvals** |
 | Payments | x402 + Computer Use | Authorization + browser ACH |
 | Browser | Playwright | ACH payment automation |
 | Backend | Python/FastAPI | API endpoints |
 
-### Dependencies (8 packages)
+### Dependencies (10 packages)
 ```
 pymongo>=4.6.0
 anthropic>=0.40.0
@@ -348,6 +492,7 @@ playwright>=1.40.0
 fastapi>=0.109.0
 uvicorn>=0.27.0
 python-dotenv>=1.0.0
+twilio>=8.0.0          # SMS integration
 ```
 
 ---
@@ -364,6 +509,10 @@ python-dotenv>=1.0.0
 | `decisions` | Final selections | - |
 | `invoices` | Received invoices | TTL auto-cleanup |
 | `payments` | Payment records | Time Series |
+| `sms_conversations` | SMS message history | TTL 30 days |
+| `pending_approvals` | Awaiting owner approval | TTL 24 hours |
+| `csv_imports` | CSV upload history | - |
+| `order_history` | Past orders for reordering | Indexed by user |
 
 ---
 
@@ -377,6 +526,9 @@ python-dotenv>=1.0.0
 | x402 payments executed | 2+ |
 | Budget compliance | 100% |
 | Demo time | <3 minutes |
+| **SMS response time** | **<30 seconds** |
+| **CSV import accuracy** | **100%** |
+| **Reorder success rate** | **>95%** |
 
 ---
 

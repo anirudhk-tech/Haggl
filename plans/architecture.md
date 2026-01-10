@@ -1,12 +1,13 @@
 # System Architecture
-## IngredientAI - Technical Architecture
+## Haggl - Technical Architecture
 
-**Version:** 1.2
+**Version:** 2.0
 **Date:** January 10, 2026
 
 **Related Docs:**
 - [ADK Agent Setup Guide](./adk-agent-setup.md) - Complete agent configuration
 - [x402 ACH Bridge Plan](./x402-ach-bridge-plan.md) - Secure payment architecture
+- [Frontend Dashboard](../frontend/dashboard-overview.md) - UI/UX design
 
 ---
 
@@ -20,6 +21,8 @@ Each agent is built using the **NVIDIA NeMo Agent Toolkit (NAT)**, an open-sourc
 | **Negotiation Agent** | `make_phone_call`, `get_call_transcript`, `parse_negotiation` | Vapi TTS integration |
 | **Evaluation Agent** | `get_all_suppliers`, `get_all_negotiations`, `save_decision` | MongoDB queries + scoring |
 | **Payment Agent** | `x402_authorize`, `inject_credentials`, browser tools | x402 + Computer Use ACH |
+| **SMS Agent** | `parse_sms`, `send_sms`, `handle_approval` | Twilio SMS integration |
+| **CSV Parser** | `parse_csv`, `validate_ingredients`, `save_import` | CSV ingredient ingestion |
 
 ### Why NVIDIA NeMo Agent Toolkit?
 
@@ -128,6 +131,16 @@ This architecture enables:
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        BUSINESS OWNER INPUT                         │
+│                                                                     │
+│  INPUT METHODS:                                                     │
+│  ┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐│
+│  │ Menu Upload│   │ CSV Import │   │ SMS Text   │   │ Dashboard  ││
+│  │ (PDF/text) │   │(spreadsheet)│   │ (Twilio)   │   │ (Web UI)   ││
+│  └─────┬──────┘   └─────┬──────┘   └─────┬──────┘   └─────┬──────┘│
+│        │                │                │                │        │
+│        └────────────────┴────────────────┴────────────────┘        │
+│                                 │                                   │
+│                                 ▼                                   │
 │  Ingredients: flour, eggs, butter, sugar                           │
 │  Quantities: 500 lbs, 1000 units, 100 lbs, 200 lbs                │
 │  Budget: $2,000                                                     │
@@ -552,13 +565,350 @@ async def pay_invoice(
 
 ---
 
+## SMS Integration (Twilio)
+
+### SMS Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      SMS BOT ARCHITECTURE                            │
+│                                                                     │
+│   BUSINESS OWNER                                                    │
+│        │                                                            │
+│        │ SMS: "Reorder flour"                                      │
+│        ▼                                                            │
+│   ┌─────────────┐                                                  │
+│   │   Twilio    │ ───────────────────────────────────┐             │
+│   │   Gateway   │                                    │             │
+│   └─────────────┘                                    │             │
+│        │                                              │             │
+│        │ Webhook POST /sms/webhook                   │             │
+│        ▼                                              │             │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │                    SMS AGENT                                 │  │
+│   │                                                              │  │
+│   │  1. Parse intent (Claude NLU)                               │  │
+│   │  2. Look up order history (MongoDB)                          │  │
+│   │  3. Execute action:                                          │  │
+│   │     - REORDER: Fetch last order, trigger procurement         │  │
+│   │     - NEW ORDER: Parse items, start sourcing                 │  │
+│   │     - APPROVE/DENY: Update pending_approvals, proceed/cancel │  │
+│   │     - STATUS: Query current order state                      │  │
+│   │  4. Send response SMS                                        │  │
+│   │                                                              │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│        │                                                            │
+│        │ Response SMS                                               │
+│        ▼                                                            │
+│   BUSINESS OWNER: "✓ Order placed! Tracking: #HGL-2026-0192"      │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### SMS Commands & Handlers
+
+```python
+from twilio.rest import Client
+from twilio.twiml.messaging_response import MessagingResponse
+
+# Initialize Twilio
+twilio_client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+
+@app.post("/sms/webhook")
+async def handle_sms(From: str, Body: str):
+    """Twilio webhook for incoming SMS"""
+
+    # Parse intent using Claude
+    intent = await parse_sms_intent(Body, From)
+
+    if intent["type"] == "reorder":
+        result = await handle_reorder(From, intent["ingredient"])
+    elif intent["type"] == "new_order":
+        result = await handle_new_order(From, intent["items"])
+    elif intent["type"] == "approve":
+        result = await handle_approval(From, approved=True)
+    elif intent["type"] == "deny":
+        result = await handle_approval(From, approved=False)
+    elif intent["type"] == "status":
+        result = await get_order_status(From)
+    elif intent["type"] == "budget":
+        result = await get_budget_status(From)
+    else:
+        result = "Commands: ORDER, REORDER, APPROVE, DENY, STATUS, BUDGET, HELP"
+
+    # Send response via TwiML
+    response = MessagingResponse()
+    response.message(result)
+    return str(response)
+
+
+async def parse_sms_intent(message: str, phone: str) -> dict:
+    """Use Claude to parse SMS intent"""
+
+    prompt = f"""Parse this SMS message from a business owner ordering supplies.
+
+MESSAGE: {message}
+
+Return JSON with:
+- type: "reorder" | "new_order" | "approve" | "deny" | "status" | "budget" | "help" | "unknown"
+- ingredient: string (if reorder)
+- items: list of {{name, quantity, unit}} (if new_order)
+- confidence: 0-1
+
+JSON:"""
+
+    response = claude.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=200,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return json.loads(response.content[0].text)
+
+
+async def handle_reorder(phone: str, ingredient: str) -> str:
+    """Handle reorder request"""
+
+    # Find last order for this ingredient
+    last_order = db.order_history.find_one(
+        {"phone": phone, "ingredient": {"$regex": ingredient, "$options": "i"}},
+        sort=[("timestamp", -1)]
+    )
+
+    if not last_order:
+        return f"No previous order found for {ingredient}. Try: ORDER 500 lbs flour"
+
+    # Create pending approval
+    approval_id = db.pending_approvals.insert_one({
+        "phone": phone,
+        "type": "reorder",
+        "order": last_order,
+        "expires_at": datetime.now() + timedelta(hours=24)
+    }).inserted_id
+
+    return f"Reorder {last_order['quantity']} {last_order['ingredient']} from {last_order['vendor']} @ ${last_order['price']:.2f}? Reply APPROVE or DENY"
+
+
+async def handle_approval(phone: str, approved: bool) -> str:
+    """Handle approval/denial of pending purchase"""
+
+    pending = db.pending_approvals.find_one_and_delete({"phone": phone})
+
+    if not pending:
+        return "No pending approval found."
+
+    if approved:
+        # Trigger procurement
+        await trigger_procurement(pending["order"])
+        return f"✓ Approved! Processing order for {pending['order']['ingredient']}..."
+    else:
+        return "✗ Order cancelled."
+```
+
+### SMS Approval Flow for Payments
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    SMS PAYMENT APPROVAL FLOW                         │
+│                                                                     │
+│   EVALUATION AGENT                                                  │
+│   "Ready to pay $1,847.50 across 4 vendors"                        │
+│        │                                                            │
+│        ▼                                                            │
+│   ┌─────────────┐                                                  │
+│   │ Check if    │                                                  │
+│   │ amount >    │ ── YES ──▶ ┌─────────────────────────────────┐  │
+│   │ threshold   │            │ CREATE PENDING APPROVAL          │  │
+│   └─────────────┘            │ SMS: "⚠️ Large purchase: $1,847  │  │
+│        │                     │ Reply APPROVE or DENY"           │  │
+│        │ NO                  └─────────────────────────────────┘  │
+│        ▼                                    │                      │
+│   AUTO-APPROVE                              │ Wait for reply       │
+│   (under threshold)                         ▼                      │
+│        │                     ┌─────────────────────────────────┐  │
+│        │                     │ OWNER REPLIES: "APPROVE"        │  │
+│        │                     └─────────────────────────────────┘  │
+│        │                                    │                      │
+│        └────────────────────────────────────┘                      │
+│                              │                                      │
+│                              ▼                                      │
+│                    x402 AUTHORIZATION + PAYMENT                     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**MongoDB Collection:** `sms_conversations`, `pending_approvals`, `sms_logs`
+
+---
+
+## CSV Ingredient Ingestion
+
+### CSV Parser Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    CSV INGESTION FLOW                                │
+│                                                                     │
+│   INPUT SOURCES:                                                    │
+│   ┌────────────┐   ┌────────────┐   ┌────────────┐                │
+│   │ File Upload│   │ Google     │   │ Email      │                │
+│   │ (Dashboard)│   │ Sheets URL │   │ Attachment │                │
+│   └─────┬──────┘   └─────┬──────┘   └─────┬──────┘                │
+│         │                │                │                        │
+│         └────────────────┴────────────────┘                        │
+│                          │                                          │
+│                          ▼                                          │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │                    CSV PARSER                                │  │
+│   │                                                              │  │
+│   │  1. Detect format (headers, delimiters)                     │  │
+│   │  2. Map columns to schema:                                  │  │
+│   │     - ingredient (required)                                 │  │
+│   │     - quantity (required)                                   │  │
+│   │     - unit (optional, inferred)                            │  │
+│   │     - quality (optional)                                    │  │
+│   │     - priority (optional)                                   │  │
+│   │  3. Validate data types                                     │  │
+│   │  4. Normalize units (lbs, kg, units, etc.)                 │  │
+│   │  5. Return structured ingredient list                       │  │
+│   │                                                              │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                          │                                          │
+│                          ▼                                          │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │  STRUCTURED OUTPUT:                                          │  │
+│   │  [                                                           │  │
+│   │    {"name": "flour", "quantity": "500 lbs", "quality": ...} │  │
+│   │    {"name": "eggs", "quantity": "1000 units", ...}          │  │
+│   │  ]                                                           │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                          │                                          │
+│                          ▼                                          │
+│                    SOURCING AGENT                                   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### CSV Processing Implementation
+
+```python
+import csv
+from io import StringIO
+from typing import List, Dict
+
+class CSVIngestionProcessor:
+    """Process CSV files into structured ingredient lists"""
+
+    REQUIRED_COLUMNS = ["ingredient"]
+    OPTIONAL_COLUMNS = ["quantity", "unit", "quality", "priority", "notes"]
+
+    # Common column name mappings
+    COLUMN_ALIASES = {
+        "item": "ingredient",
+        "product": "ingredient",
+        "name": "ingredient",
+        "qty": "quantity",
+        "amount": "quantity",
+        "grade": "quality",
+        "type": "quality"
+    }
+
+    async def process_csv(self, csv_content: str) -> List[Dict]:
+        """Parse CSV content and return ingredient list"""
+
+        # Detect delimiter
+        dialect = csv.Sniffer().sniff(csv_content[:1024])
+        reader = csv.DictReader(StringIO(csv_content), dialect=dialect)
+
+        # Normalize column names
+        reader.fieldnames = [self._normalize_column(col) for col in reader.fieldnames]
+
+        ingredients = []
+        for row in reader:
+            ingredient = self._parse_row(row)
+            if ingredient:
+                ingredients.append(ingredient)
+
+        # Log import
+        db.csv_imports.insert_one({
+            "timestamp": datetime.now(),
+            "row_count": len(ingredients),
+            "ingredients": [i["name"] for i in ingredients]
+        })
+
+        return ingredients
+
+    def _normalize_column(self, col: str) -> str:
+        """Normalize column name to standard schema"""
+        col_lower = col.lower().strip()
+        return self.COLUMN_ALIASES.get(col_lower, col_lower)
+
+    def _parse_row(self, row: Dict) -> Dict:
+        """Parse single row into ingredient dict"""
+
+        if not row.get("ingredient"):
+            return None
+
+        # Parse quantity and unit
+        quantity, unit = self._parse_quantity(row.get("quantity", "1"))
+
+        return {
+            "name": row["ingredient"].strip(),
+            "quantity": f"{quantity} {unit}",
+            "quality": row.get("quality", "standard").strip(),
+            "priority": row.get("priority", "medium").strip(),
+            "notes": row.get("notes", "").strip()
+        }
+
+    def _parse_quantity(self, qty_str: str) -> tuple:
+        """Parse quantity string like '500 lbs' into (500, 'lbs')"""
+        import re
+
+        match = re.match(r'(\d+(?:\.\d+)?)\s*(\w+)?', str(qty_str).strip())
+        if match:
+            quantity = float(match.group(1))
+            unit = match.group(2) or "units"
+            return quantity, unit
+
+        return 1, "units"
+```
+
+### Sample CSV Formats Supported
+
+**Format 1: Full Detail**
+```csv
+ingredient,quantity,unit,quality,priority
+All-purpose flour,500,lbs,commercial grade,high
+Eggs,1000,units,cage-free Grade A,high
+Butter,100,lbs,unsalted,medium
+```
+
+**Format 2: Minimal**
+```csv
+item,qty
+flour,500 lbs
+eggs,1000
+butter,100 lbs
+```
+
+**Format 3: With Notes**
+```csv
+product,amount,grade,notes
+Flour,500 lbs,organic,Need by Friday
+Eggs,1000 units,cage-free,Weekly delivery preferred
+```
+
+**MongoDB Collection:** `csv_imports`, `ingredient_templates`
+
+---
+
 ## Vapi Integration
 
 ### Assistant Configuration
 
 ```python
 vapi_assistant = {
-    "name": "IngredientAI Negotiator",
+    "name": "Haggl Negotiator",
     "model": {
         "provider": "anthropic",
         "model": "claude-sonnet-4-20250514",
@@ -716,7 +1066,7 @@ async def process_order(order: Order) -> dict:
 ## File Structure
 
 ```
-ingredient-ai/
+haggl/
 ├── main.py                    # Entry point & CLI
 ├── orchestrator.py            # Concurrent execution logic
 ├── agents/
@@ -724,7 +1074,18 @@ ingredient-ai/
 │   ├── sourcing.py           # Exa.ai integration
 │   ├── negotiation.py        # Vapi integration
 │   ├── evaluation.py         # Scoring & optimization
-│   └── payment.py            # x402 + Computer Use bridge
+│   ├── payment.py            # x402 + Computer Use bridge
+│   └── sms.py                # SMS agent (Twilio)
+├── ingestion/
+│   ├── __init__.py
+│   ├── csv_parser.py         # CSV ingredient ingestion
+│   ├── menu_parser.py        # Menu upload parsing
+│   └── validators.py         # Input validation
+├── sms/
+│   ├── __init__.py
+│   ├── handler.py            # SMS webhook handler
+│   ├── commands.py           # Command parsing & execution
+│   └── approval.py           # SMS approval flow
 ├── computer_use/
 │   ├── __init__.py
 │   ├── browser.py            # Playwright browser controller
@@ -733,11 +1094,13 @@ ingredient-ai/
 ├── api/
 │   ├── __init__.py
 │   ├── server.py             # FastAPI endpoints
-│   └── x402.py               # x402 middleware
+│   ├── x402.py               # x402 middleware
+│   └── sms_webhook.py        # Twilio SMS webhook
 ├── utils/
 │   ├── __init__.py
 │   ├── mongo.py              # MongoDB client
 │   └── config.py             # Environment config
+├── frontend/                  # Dashboard UI (see frontend docs)
 ├── screenshots/               # Payment confirmation screenshots
 ├── .env                       # API keys
 ├── requirements.txt           # Dependencies

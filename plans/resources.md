@@ -1,7 +1,7 @@
 # Resources & API Documentation
-## IngredientAI - Setup Links and References
+## Haggl - Setup Links and References
 
-**Last Updated:** January 9, 2026
+**Last Updated:** January 10, 2026
 
 ---
 
@@ -21,7 +21,7 @@
 
 ### Connection String Format
 ```
-mongodb+srv://username:password@cluster.mongodb.net/ingredient_ai?retryWrites=true&w=majority
+mongodb+srv://username:password@cluster.mongodb.net/haggl?retryWrites=true&w=majority
 ```
 
 ### Python Usage
@@ -29,7 +29,7 @@ mongodb+srv://username:password@cluster.mongodb.net/ingredient_ai?retryWrites=tr
 from pymongo import MongoClient
 
 client = MongoClient(os.getenv("MONGODB_URI"))
-db = client["ingredient_ai"]
+db = client["haggl"]
 
 # Test connection
 print(client.server_info())
@@ -158,7 +158,60 @@ print(result.transcript)
 
 ---
 
-## 5. Coinbase CDP (x402)
+## 5. Twilio (SMS)
+
+### Official Links
+- **Homepage:** https://www.twilio.com/
+- **Docs:** https://www.twilio.com/docs/sms
+- **Console:** https://console.twilio.com/
+
+### Setup
+1. Sign up at twilio.com
+2. Get Account SID and Auth Token from console
+3. Purchase a phone number ($1/month)
+4. Configure webhook URL for incoming SMS
+
+### Python Usage
+```python
+from twilio.rest import Client
+from twilio.twiml.messaging_response import MessagingResponse
+
+# Initialize client
+client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+
+# Send SMS
+message = client.messages.create(
+    body="Your order has been confirmed!",
+    from_="+1234567890",
+    to="+0987654321"
+)
+
+print(message.sid)
+
+# Handle incoming SMS (webhook response)
+@app.post("/sms/webhook")
+def handle_sms(From: str, Body: str):
+    response = MessagingResponse()
+    response.message("Thanks! Processing your request...")
+    return str(response)
+```
+
+### Webhook Configuration
+1. Go to Console > Phone Numbers > Manage > Active Numbers
+2. Select your number
+3. Under "Messaging", set webhook URL: `https://your-domain.com/sms/webhook`
+4. Method: POST
+
+### Environment Variables
+```bash
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=+1...
+```
+
+---
+
+## 6. Coinbase CDP (x402)
 
 ### Official Links
 - **Homepage:** https://www.coinbase.com/cloud/products/cdp-sdk
@@ -234,7 +287,7 @@ print(intent.id)
 
 ---
 
-## 7. Python Dependencies
+## 8. Python Dependencies
 
 ### requirements.txt
 ```
@@ -242,9 +295,12 @@ pymongo>=4.6.0
 anthropic>=0.40.0
 exa-py>=1.0.0
 vapi-python>=0.1.0
+twilio>=8.0.0
 cdp-sdk>=0.0.5
+playwright>=1.40.0
 fastapi>=0.109.0
 uvicorn>=0.27.0
+python-multipart>=0.0.6
 python-dotenv>=1.0.0
 stripe>=7.0.0
 ```
@@ -252,16 +308,17 @@ stripe>=7.0.0
 ### Installation
 ```bash
 pip install -r requirements.txt
+playwright install chromium
 ```
 
 ---
 
-## 8. Environment Variables
+## 9. Environment Variables
 
 ### .env Template
 ```bash
 # MongoDB Atlas
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/ingredient_ai
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/haggl
 
 # Claude API (Anthropic)
 ANTHROPIC_API_KEY=sk-ant-api03-...
@@ -272,6 +329,11 @@ EXA_API_KEY=...
 # Vapi
 VAPI_API_KEY=...
 VAPI_ASSISTANT_ID=...
+
+# Twilio (SMS)
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=+1...
 
 # Coinbase CDP
 CDP_API_KEY_NAME=organizations/.../apiKeys/...
@@ -285,6 +347,11 @@ STRIPE_SECRET_KEY=sk_test_...
 
 # x402 Escrow
 ESCROW_WALLET_ADDRESS=0x...
+
+# ACH Credentials (for Computer Use)
+ACH_ROUTING_NUMBER=...
+ACH_ACCOUNT_NUMBER=...
+ACH_ACCOUNT_NAME=Sweet Dreams Bakery LLC
 ```
 
 ---

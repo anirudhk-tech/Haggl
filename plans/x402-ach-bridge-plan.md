@@ -1,9 +1,13 @@
 # x402 Authorization Layer + Legacy Execution Bridge
 ## Secure Autonomous Payment Authorization & Execution
 
-**Version:** 1.1
+**Version:** 2.0
 **Date:** January 10, 2026
 **Status:** Novel Implementation — Ready to Build
+
+**New in v2.0:**
+- SMS-based approval flow for large purchases
+- Owner can approve/deny payments via text message
 
 ---
 
@@ -11,9 +15,9 @@
 
 This document is designed to be used independently to build the x402 + ACH payment layer. Below is the context you need.
 
-### What is IngredientAI?
+### What is Haggl?
 
-IngredientAI is a multi-agent B2B procurement system. A business owner inputs ingredient needs, quantities, and budget. Four agents work concurrently:
+Haggl is a multi-agent B2B procurement system. A business owner inputs ingredient needs, quantities, and budget. Four agents work concurrently:
 
 ```
 USER INPUT: "500 lbs flour, 1000 eggs, budget $2,000"
@@ -560,6 +564,180 @@ async def validate_invoice(invoice: dict) -> tuple[bool, str]:
         return False, "Amount mismatch with line items"
 
     return True, "Valid"
+```
+
+---
+
+## Phase 3.5: SMS Approval Flow (Large Purchases)
+
+### When SMS Approval is Required
+
+For security, large purchases require explicit owner approval via SMS before x402 authorization proceeds:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    SMS APPROVAL FLOW                                 │
+│                                                                     │
+│   EVALUATION AGENT outputs: $1,847.50 across 4 vendors             │
+│                          │                                          │
+│                          ▼                                          │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │            APPROVAL THRESHOLD CHECK                          │  │
+│   │                                                              │  │
+│   │  if amount > SMS_APPROVAL_THRESHOLD ($500):                 │  │
+│   │     → Require SMS approval                                  │  │
+│   │  else:                                                      │  │
+│   │     → Auto-approve (proceed to x402)                        │  │
+│   │                                                              │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                          │                                          │
+│                          ▼                                          │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │            SEND SMS APPROVAL REQUEST                         │  │
+│   │                                                              │  │
+│   │  SMS → Owner:                                               │  │
+│   │  "⚠️ Large purchase requires approval:                       │  │
+│   │   $1,847.50 across 4 vendors:                               │  │
+│   │   - Bay Area Foods: $212.50 (flour)                         │  │
+│   │   - Farm Fresh: $450.00 (eggs)                              │  │
+│   │   - ...                                                     │  │
+│   │   Reply APPROVE to proceed or DENY to cancel."              │  │
+│   │                                                              │  │
+│   │  Store in: pending_approvals (TTL: 24 hours)                │  │
+│   │                                                              │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                          │                                          │
+│                          │ Owner replies: "APPROVE"                 │
+│                          ▼                                          │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │            PROCESS APPROVAL                                  │  │
+│   │                                                              │  │
+│   │  1. Lookup pending_approvals by phone                       │  │
+│   │  2. Update status to "approved"                             │  │
+│   │  3. Trigger x402 authorization                              │  │
+│   │  4. Send confirmation: "✓ Processing payments..."           │  │
+│   │                                                              │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                          │                                          │
+│                          ▼                                          │
+│                    x402 AUTHORIZATION                               │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### SMS Approval Implementation
+
+```python
+from twilio.rest import Client
+from datetime import datetime, timedelta
+
+twilio = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+SMS_APPROVAL_THRESHOLD = 500.00  # Require approval above $500
+
+
+async def check_and_request_approval(invoices: list, total_amount: float, owner_phone: str) -> bool:
+    """
+    Check if SMS approval is needed and request if so.
+    Returns True if auto-approved, False if waiting for SMS.
+    """
+
+    if total_amount <= SMS_APPROVAL_THRESHOLD:
+        # Auto-approve small purchases
+        return True
+
+    # Create approval request
+    vendor_summary = "\n".join([
+        f"  - {inv['vendor']}: ${inv['amount_usd']:.2f} ({inv['ingredient']})"
+        for inv in invoices[:4]  # Show first 4
+    ])
+
+    if len(invoices) > 4:
+        vendor_summary += f"\n  ... and {len(invoices) - 4} more"
+
+    message = f"""⚠️ Large purchase requires approval:
+${total_amount:.2f} across {len(invoices)} vendors:
+{vendor_summary}
+
+Reply APPROVE to proceed or DENY to cancel."""
+
+    # Send SMS
+    twilio.messages.create(
+        body=message,
+        from_=os.getenv("TWILIO_PHONE_NUMBER"),
+        to=owner_phone
+    )
+
+    # Store pending approval
+    db.pending_approvals.insert_one({
+        "phone": owner_phone,
+        "type": "payment",
+        "invoices": invoices,
+        "total_amount": total_amount,
+        "status": "pending",
+        "created_at": datetime.now(),
+        "expires_at": datetime.now() + timedelta(hours=24)
+    })
+
+    return False  # Waiting for approval
+
+
+async def process_sms_approval(phone: str, approved: bool) -> dict:
+    """Process SMS approval/denial for pending payments."""
+
+    pending = db.pending_approvals.find_one_and_update(
+        {"phone": phone, "type": "payment", "status": "pending"},
+        {"$set": {"status": "approved" if approved else "denied", "processed_at": datetime.now()}}
+    )
+
+    if not pending:
+        return {"status": "no_pending", "message": "No pending payment approval found"}
+
+    if approved:
+        # Proceed with x402 authorization
+        results = []
+        for invoice in pending["invoices"]:
+            auth_result = await x402_authorize(invoice)
+            results.append(auth_result)
+
+        # Send confirmation
+        twilio.messages.create(
+            body=f"✓ Approved! Processing {len(results)} payments via x402...",
+            from_=os.getenv("TWILIO_PHONE_NUMBER"),
+            to=phone
+        )
+
+        return {"status": "approved", "payments_initiated": len(results)}
+    else:
+        # Send denial confirmation
+        twilio.messages.create(
+            body="✗ Payments cancelled. No charges made.",
+            from_=os.getenv("TWILIO_PHONE_NUMBER"),
+            to=phone
+        )
+
+        return {"status": "denied", "message": "Payments cancelled by owner"}
+```
+
+### MongoDB Collection: pending_approvals
+
+```python
+pending_approvals = {
+    "_id": ObjectId(),
+    "phone": "+14155551234",
+    "type": "payment",  # "payment" | "reorder" | "new_order"
+    "invoices": [
+        {"invoice_id": "INV-001", "vendor": "Bay Area Foods", "amount_usd": 212.50, ...},
+        ...
+    ],
+    "total_amount": 1847.50,
+    "status": "pending",  # "pending" | "approved" | "denied" | "expired"
+    "created_at": ISODate(),
+    "expires_at": ISODate(),  # TTL index: auto-delete after 24h
+    "processed_at": ISODate()  # When approved/denied
+}
+
+# TTL index to auto-expire pending approvals
+db.pending_approvals.create_index("expires_at", expireAfterSeconds=0)
 ```
 
 ---

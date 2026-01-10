@@ -1,8 +1,21 @@
 # User Flow & Demo Walkthrough
-## IngredientAI - Step-by-Step Demo
+## Haggl - Step-by-Step Demo
 
 **Demo Duration:** <3 minutes
-**Date:** January 9, 2026
+**Date:** January 10, 2026
+
+---
+
+## Input Methods Overview
+
+Haggl supports **four ways** for business owners to interact:
+
+| Method | Best For | Example |
+|--------|----------|---------|
+| **Menu Upload** | Initial setup | Upload bakery menu PDF |
+| **CSV Import** | Bulk inventory | Import spreadsheet with 50+ items |
+| **SMS Texting** | On-the-go orders | "Reorder flour" from phone |
+| **Dashboard** | Full control | Web UI with analytics |
 
 ---
 
@@ -10,7 +23,7 @@
 
 ### 1. Verify Connections (5 min before)
 ```bash
-cd ingredient-ai
+cd haggl
 source venv/bin/activate
 
 # Test all APIs
@@ -19,6 +32,7 @@ python test_connections.py
 # Claude: Connected
 # Exa.ai: Connected
 # Vapi: Connected
+# Twilio: Connected
 # CDP Wallet: 500 USDC
 ```
 
@@ -47,7 +61,7 @@ print('Database cleared')
 ### Scene 1: Introduction (15 seconds)
 
 **What You Say:**
-> "Meet IngredientAI - AI agents that source, negotiate, and pay for business supplies autonomously. Let me show you how it works for a bakery ordering ingredients."
+> "Meet Haggl - AI agents that source, negotiate, and pay for business supplies autonomously. Let me show you how it works for a bakery ordering ingredients."
 
 ---
 
@@ -217,6 +231,62 @@ Transactions:
 
 ---
 
+## SMS Demo Script (Alternative Flow)
+
+### SMS Reorder Demo (30 seconds)
+
+**Show phone screen or terminal:**
+
+**Step 1: Owner texts reorder**
+```
+Owner → Haggl: "Reorder flour"
+```
+
+**Step 2: Haggl responds with confirmation**
+```
+Haggl → Owner: "Reorder 500 lbs all-purpose flour from Bay Area Foods @ $0.425/lb ($212.50 total)? Reply APPROVE or DENY"
+```
+
+**Step 3: Owner approves**
+```
+Owner → Haggl: "APPROVE"
+```
+
+**Step 4: Haggl confirms and processes**
+```
+Haggl → Owner: "✓ Order placed! x402 TX: 0x8f3e... ETA: Jan 12. Tracking: #HGL-2026-0192"
+```
+
+**Say:**
+> "Business owners can reorder with a single text. No app needed. Haggl remembers their previous orders and preferred vendors."
+
+---
+
+## CSV Import Demo (15 seconds)
+
+**Show dashboard or curl command:**
+
+```bash
+# Upload ingredients.csv
+curl -X POST http://localhost:8000/upload/csv \
+  -F "file=@ingredients.csv"
+
+# Response:
+{
+  "status": "success",
+  "ingredients": [
+    {"name": "flour", "quantity": "500 lbs", "quality": "commercial"},
+    {"name": "eggs", "quantity": "1000 units", "quality": "cage-free"},
+    ...
+  ]
+}
+```
+
+**Say:**
+> "Bulk import from any spreadsheet. Just upload CSV, we parse the ingredients, and start sourcing immediately."
+
+---
+
 ## Q&A Responses
 
 ### "Are those real phone calls?"
@@ -230,6 +300,12 @@ Transactions:
 
 ### "Is this production-ready?"
 > "The core technology works today. For production, we'd add user authentication, more payment methods, and compliance features. But the autonomous sourcing, negotiation, and payment? That works right now."
+
+### "How does SMS ordering work?"
+> "Business owners text a Twilio number we provision. Claude parses their intent - reorder, new order, approve, deny, or status check. For reorders, we look up their previous order history in MongoDB and auto-fill quantities. They just reply APPROVE and we handle the rest."
+
+### "Can they import bulk orders?"
+> "Yes, CSV upload. We auto-detect column mappings - ingredient, quantity, unit, quality. Works with any spreadsheet export from their inventory system."
 
 ---
 
