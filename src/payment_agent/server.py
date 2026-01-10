@@ -24,8 +24,11 @@ from ..x402 import (
     AuthorizationResponse,
     Invoice,
     SpendingPolicy,
+    get_vault,
+    get_escrow_manager,
 )
 from .executor import PaymentExecutor, get_executor
+from .browserbase import BrowserbaseClient, PaymentPortalAutomator, InvoiceParser
 from .schemas import (
     PaymentMethod,
     PaymentRequest,
@@ -114,6 +117,30 @@ class FullPaymentResponse(BaseModel):
     payment: Optional[PaymentResult] = None
     success: bool = False
     message: str = ""
+
+
+class StoreCredentialsRequest(BaseModel):
+    """Request to store ACH credentials."""
+    business_id: str = Field(description="Business ID")
+    routing_number: str = Field(description="9-digit ABA routing number")
+    account_number: str = Field(description="Bank account number")
+    account_name: str = Field(description="Name on the account")
+    bank_name: Optional[str] = Field(default=None, description="Bank name")
+
+
+class PayInvoiceRequest(BaseModel):
+    """Request to pay an invoice via browser automation."""
+    invoice_url: str = Field(description="URL of the invoice payment page")
+    business_id: str = Field(description="Business ID for credential lookup")
+    auth_token: str = Field(description="x402 authorization token")
+    contact_email: str = Field(default="orders@haggl.demo", description="Email for receipt")
+
+
+class EscrowReleaseRequest(BaseModel):
+    """Request to release escrow to vendor."""
+    auth_token: str = Field(description="x402 authorization token")
+    vendor_id: str = Field(description="Vendor receiving funds")
+    ach_confirmation: Optional[str] = Field(default=None, description="ACH confirmation number")
 
 
 # ============================================================================
@@ -339,6 +366,184 @@ async def reset_state():
     executor.reset()
     
     return {"status": "reset", "message": "All state cleared"}
+
+
+# ============================================================================
+# Credential Vault Endpoints
+# ============================================================================
+
+@app.post("/vault/credentials")
+async def store_credentials(request: StoreCredentialsRequest):
+    """
+    Store encrypted ACH credentials for a business.
+    
+    This is called during business onboarding (NOT by AI agents).
+    Credentials are encrypted at rest with AES-256-GCM.
+    """
+    vault = get_vault()
+    result = vault.store_credentials(
+        business_id=request.business_id,
+        routing_number=request.routing_number,
+        account_number=request.account_number,
+        account_name=request.account_name,
+        bank_name=request.bank_name
+    )
+    return result
+
+
+@app.get("/vault/credentials/{business_id}")
+async def get_credential_info(business_id: str):
+    """
+    Get non-sensitive credential info (masked account numbers).
+    
+    Returns info like ****7890 for display purposes.
+    """
+    vault = get_vault()
+    info = vault.get_credential_info(business_id)
+    
+    if not info:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No credentials found for business {business_id}"
+        )
+    
+    return info
+
+
+@app.delete("/vault/credentials/{business_id}")
+async def delete_credentials(business_id: str):
+    """Delete credentials for a business."""
+    vault = get_vault()
+    success = vault.delete_credentials(business_id)
+    
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No credentials found for business {business_id}"
+        )
+    
+    return {"status": "deleted", "business_id": business_id}
+
+
+# ============================================================================
+# Escrow Management Endpoints
+# ============================================================================
+
+@app.post("/escrow/release")
+async def release_escrow(request: EscrowReleaseRequest):
+    """
+    Release escrowed funds to vendor after successful payment.
+    
+    Called after ACH payment is confirmed.
+    """
+    authorizer = get_authorizer()
+    result = authorizer.release_escrow(
+        auth_token=request.auth_token,
+        vendor_id=request.vendor_id,
+        ach_confirmation=request.ach_confirmation
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "Failed to release escrow")
+        )
+    
+    return result
+
+
+@app.get("/escrow/stats")
+async def get_escrow_stats():
+    """Get escrow statistics."""
+    authorizer = get_authorizer()
+    return authorizer.get_escrow_stats()
+
+
+@app.get("/escrow/{invoice_id}")
+async def get_escrow_by_invoice(invoice_id: str):
+    """Get escrow lock for an invoice."""
+    escrow_manager = get_escrow_manager()
+    lock = escrow_manager.get_lock_by_invoice(invoice_id)
+    
+    if not lock:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No escrow found for invoice {invoice_id}"
+        )
+    
+    return lock.model_dump()
+
+
+# ============================================================================
+# Browser Automation Endpoints
+# ============================================================================
+
+@app.post("/browser/pay-invoice")
+async def pay_invoice_via_browser(request: PayInvoiceRequest):
+    """
+    Pay an invoice through browser automation.
+    
+    Uses Browserbase cloud browsers to navigate to the payment portal,
+    fill in ACH credentials from the secure vault, and submit payment.
+    """
+    logger.info(f"🌐 Browser payment request for {request.invoice_url}")
+    
+    # Create browser client with real credentials
+    browser = BrowserbaseClient(mock_mode=False)
+    automator = PaymentPortalAutomator(browser)
+    
+    result = await automator.pay_invoice(
+        invoice_url=request.invoice_url,
+        business_id=request.business_id,
+        auth_token=request.auth_token,
+        contact_email=request.contact_email
+    )
+    
+    # If successful, release escrow
+    if result.get("status") == "succeeded":
+        authorizer = get_authorizer()
+        escrow_result = authorizer.release_escrow(
+            auth_token=request.auth_token,
+            vendor_id=result.get("parsed_invoice", {}).get("vendor_name", "unknown"),
+            ach_confirmation=result.get("confirmation")
+        )
+        result["escrow_released"] = escrow_result.get("success", False)
+    
+    return result
+
+
+@app.post("/browser/parse-invoice")
+async def parse_invoice_from_url(invoice_url: str):
+    """
+    Navigate to an invoice URL and parse its details.
+    
+    Returns parsed invoice info including amount, vendor, payment methods.
+    """
+    browser = BrowserbaseClient(mock_mode=False)
+    parser = InvoiceParser()
+    
+    try:
+        # Create session and navigate
+        session = await browser.create_session()
+        if session.get("error"):
+            raise HTTPException(status_code=500, detail=session["error"])
+        
+        await browser.connect_browser()
+        await browser.navigate(invoice_url)
+        
+        # Take screenshot and parse
+        screenshot = await browser.screenshot()
+        if screenshot:
+            parsed = await parser.parse_from_screenshot(screenshot)
+            return {
+                "url": invoice_url,
+                "parsed": parsed
+            }
+        
+        return {"url": invoice_url, "error": "Could not capture screenshot"}
+        
+    finally:
+        await browser.close()
 
 
 # ============================================================================

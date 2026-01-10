@@ -21,6 +21,7 @@ from .schemas import (
     BudgetContext,
 )
 from .wallet import CDPWallet, get_wallet
+from .escrow import EscrowManager, get_escrow_manager
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +40,19 @@ class X402Authorizer:
     def __init__(
         self,
         wallet: Optional[CDPWallet] = None,
-        policy: Optional[SpendingPolicy] = None
+        policy: Optional[SpendingPolicy] = None,
+        escrow_manager: Optional[EscrowManager] = None
     ):
         self.wallet = wallet or get_wallet()
         self.policy = policy or SpendingPolicy()
+        self.escrow = escrow_manager or get_escrow_manager()
         
         # In-memory storage (use MongoDB in production)
         self._authorizations: dict[str, AuthorizationResponse] = {}
         self._daily_spending: dict[str, float] = {}  # date -> amount
         self._weekly_spending: float = 0.0
         self._auth_tokens: dict[str, str] = {}  # token -> invoice_id
+        self._token_to_escrow: dict[str, str] = {}  # auth_token -> escrow_id
     
     async def authorize(self, request: AuthorizationRequest) -> AuthorizationResponse:
         """
@@ -104,13 +108,26 @@ class X402Authorizer:
                 policy_checks=policy_result["checks"]
             )
         
-        # Step 3: Generate single-use auth token
+        # Step 3: Create escrow lock
+        escrow_lock = self.escrow.create_lock(
+            invoice_id=invoice.invoice_id,
+            business_id=request.request_id or "default_business",
+            amount_usdc=invoice.amount_usd,
+            auth_token="pending",  # Will update after generating token
+            tx_hash=transfer_result["tx_hash"],
+            vendor_id=invoice.vendor_id,
+        )
+        
+        # Step 4: Generate single-use auth token
         auth_token = self._generate_auth_token(invoice.invoice_id)
         
-        # Step 4: Update spending tracking
+        # Link auth token to escrow
+        self._token_to_escrow[auth_token] = escrow_lock.escrow_id
+        
+        # Step 5: Update spending tracking
         self._record_spending(invoice.amount_usd)
         
-        # Step 5: Build response
+        # Step 6: Build response
         response = AuthorizationResponse(
             request_id=request_id,
             invoice_id=invoice.invoice_id,
@@ -252,12 +269,72 @@ class X402Authorizer:
             "weekly_remaining": self.policy.weekly_limit - self._weekly_spending
         }
     
+    def release_escrow(
+        self,
+        auth_token: str,
+        vendor_id: str,
+        ach_confirmation: Optional[str] = None
+    ) -> dict:
+        """
+        Release escrowed funds to vendor after successful payment.
+        
+        Args:
+            auth_token: The authorization token used
+            vendor_id: Vendor receiving funds
+            ach_confirmation: ACH confirmation number if applicable
+        
+        Returns:
+            Dict with release status
+        """
+        escrow_id = self._token_to_escrow.get(auth_token)
+        if not escrow_id:
+            return {"success": False, "error": "No escrow found for auth token"}
+        
+        release = self.escrow.release_to_vendor(
+            escrow_id=escrow_id,
+            vendor_id=vendor_id,
+            ach_confirmation=ach_confirmation
+        )
+        
+        if release:
+            return {
+                "success": True,
+                "release_id": release.release_id,
+                "amount": release.amount_usdc,
+                "tx_hash": release.tx_hash
+            }
+        
+        return {"success": False, "error": "Failed to release escrow"}
+    
+    def refund_escrow(self, auth_token: str, reason: str) -> dict:
+        """
+        Refund escrowed funds back to business.
+        
+        Args:
+            auth_token: The authorization token
+            reason: Reason for refund
+        
+        Returns:
+            Dict with refund status
+        """
+        escrow_id = self._token_to_escrow.get(auth_token)
+        if not escrow_id:
+            return {"success": False, "error": "No escrow found for auth token"}
+        
+        success = self.escrow.refund_to_business(escrow_id, reason)
+        return {"success": success, "reason": reason if success else "Refund failed"}
+    
+    def get_escrow_stats(self) -> dict:
+        """Get escrow statistics."""
+        return self.escrow.get_stats()
+    
     def reset(self):
         """Reset all state (for testing)."""
         self._authorizations.clear()
         self._daily_spending.clear()
         self._weekly_spending = 0.0
         self._auth_tokens.clear()
+        self._token_to_escrow.clear()
 
 
 # Global authorizer instance

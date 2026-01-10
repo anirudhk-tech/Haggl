@@ -10,8 +10,9 @@ from .schemas import (
     MockACHPayment,
 )
 from .browserbase import (
-    BrowserbaseX402Client,
-    IntuitPaymentAutomator,
+    BrowserbaseClient,
+    PaymentPortalAutomator,
+    InvoiceParser,
     pay_intuit_invoice,
 )
 
@@ -24,7 +25,8 @@ __all__ = [
     "PaymentStatus",
     "MockStripePayment",
     "MockACHPayment",
-    "BrowserbaseX402Client",
-    "IntuitPaymentAutomator",
+    "BrowserbaseClient",
+    "PaymentPortalAutomator",
+    "InvoiceParser",
     "pay_intuit_invoice",
 ]
