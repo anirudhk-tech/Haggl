@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { OrderCard } from '@/components/OrderCard';
 import Link from 'next/link';
+import { useAgentEvents, type AgentEvent } from '@/lib/useAgentEvents';
+import { Check, Loader2, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 
 const allOrders = [
   { orderId: '#ORD-001', items: 8, status: 'sourcing' as const, total: '$842.50', date: 'Jan 10, 2026', live: true },
@@ -15,9 +17,144 @@ const allOrders = [
   { orderId: '#ORD-007', items: 4, status: 'complete' as const, total: '$240.00', date: 'Jan 4, 2026' },
 ];
 
+function formatTime(timestamp: string) {
+  return new Date(timestamp).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function LiveActivityPanel({ events, connected, onRefresh }: {
+  events: AgentEvent[];
+  connected: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-gray-900">Live Activity</h2>
+          <div className={`flex items-center gap-1.5 ${connected ? 'text-brand' : 'text-gray-400'}`}>
+            {connected ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-brand"></span>
+                </span>
+                <span className="text-xs font-medium">Live</span>
+              </>
+            ) : (
+              <>
+                <WifiOff size={12} />
+                <span className="text-xs font-medium">Disconnected</span>
+              </>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={onRefresh}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          title="Refresh"
+        >
+          <RefreshCw size={16} className="text-gray-500" />
+        </button>
+      </div>
+      
+      {/* Activity Feed */}
+      <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+        {events.length === 0 ? (
+          <div className="p-8 text-center text-gray-500 text-sm">
+            <p>Waiting for activity...</p>
+            <p className="text-xs mt-1">Send a message to start</p>
+          </div>
+        ) : (
+          events.slice(0, 15).map((event, i) => (
+            <div key={`${event.timestamp}-${i}`} className="px-6 py-3 hover:bg-gray-50 transition-colors">
+              <div className="flex items-start gap-3">
+                <div className={`w-2 h-2 rounded-full mt-2 ${
+                  event.stage === 'sourcing' ? 'bg-status-blue' :
+                  event.stage === 'calling' || event.stage === 'negotiating' ? 'bg-status-orange' :
+                  event.stage === 'evaluating' ? 'bg-status-blue' :
+                  event.stage === 'approval_pending' ? 'bg-status-yellow' :
+                  event.stage === 'approved' || event.stage === 'completed' ? 'bg-brand' :
+                  event.stage === 'failed' ? 'bg-status-rose' :
+                  'bg-gray-400'
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-900 leading-relaxed">{event.message}</p>
+                  <p className="text-xs text-gray-400 mt-1 font-mono">{formatTime(event.timestamp)}</p>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PendingApprovalsPanel({ approvals, onApprove }: {
+  approvals: { order_id: string; vendor_name: string; price: number; product: string; quantity: number; unit: string }[];
+  onApprove: (orderId: string) => Promise<boolean>;
+}) {
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+
+  const handleApprove = async (orderId: string) => {
+    setApprovingId(orderId);
+    await onApprove(orderId);
+    setApprovingId(null);
+  };
+
+  if (approvals.length === 0) return null;
+
+  return (
+    <div className="bg-status-yellow-light border border-status-yellow rounded-xl p-6 mb-8">
+      <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <span className="w-2 h-2 bg-status-yellow rounded-full animate-pulse" />
+        Pending Approvals ({approvals.length})
+      </h3>
+      <div className="space-y-4">
+        {approvals.map((approval) => (
+          <div key={approval.order_id} className="bg-white rounded-lg p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-gray-900">{approval.vendor_name}</p>
+                <p className="text-sm text-gray-500">
+                  {approval.quantity} {approval.unit} of {approval.product} @ ${approval.price.toFixed(2)}/{approval.unit}
+                </p>
+                <p className="text-xs text-gray-400 font-mono mt-1">{approval.order_id}</p>
+              </div>
+              <button
+                onClick={() => handleApprove(approval.order_id)}
+                disabled={approvingId === approval.order_id}
+                className="bg-brand hover:bg-brand-dark text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {approvingId === approval.order_id ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Approving...
+                  </>
+                ) : (
+                  <>
+                    <Check size={16} />
+                    Approve
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Orders() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const { events, connected, pendingApprovals, approveOrder, refresh } = useAgentEvents();
 
   // Check if onboarding is complete
   useEffect(() => {
@@ -50,6 +187,14 @@ export default function Orders() {
         >
           New Order
         </Link>
+      </div>
+
+      {/* Pending Approvals Banner */}
+      <PendingApprovalsPanel approvals={pendingApprovals} onApprove={approveOrder} />
+
+      {/* Live Activity Panel */}
+      <div className="mb-8">
+        <LiveActivityPanel events={events} connected={connected} onRefresh={refresh} />
       </div>
 
       {/* Search */}

@@ -106,3 +106,49 @@ export interface RadarDataPoint {
   value: number;
   fullMark: number;
 }
+
+// Agent stages
+export type AgentStage =
+  | "idle"
+  | "message_received"
+  | "sourcing"
+  | "calling"
+  | "negotiating"
+  | "evaluating"
+  | "confirmed"
+  | "approval_pending"
+  | "approved"
+  | "completed"
+  | "failed";
+
+// Event types
+export type EventType =
+  | "stage_change"
+  | "log"
+  | "vendor_update"
+  | "call_update"
+  | "evaluation_update"
+  | "order_update"
+  | "approval_required"
+  | "system";
+
+// Agent event from SSE
+export interface AgentEvent {
+  event_type: EventType;
+  stage: AgentStage;
+  order_id?: string;
+  message: string;
+  data: Record<string, unknown>;
+  timestamp: string;
+}
+
+// Pending approval
+export interface PendingApproval {
+  order_id: string;
+  vendor_name: string;
+  price: number;
+  product: string;
+  quantity: number;
+  unit: string;
+  created_at?: string;
+}

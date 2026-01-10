@@ -54,6 +54,20 @@ from .evaluations import (
     update_evaluation_status,
     create_evaluation,
 )
+from .businesses import (
+    save_business_profile,
+    get_business_profile,
+    get_business_by_phone,
+    create_business_from_onboarding,
+    update_business_preferences,
+    get_business_context_for_agent,
+)
+from .schemas import (
+    BusinessProfile,
+    BusinessProduct,
+    BusinessLocation,
+    BusinessType,
+)
 
 __all__ = [
     # Database
@@ -103,4 +117,15 @@ __all__ = [
     "get_evaluation_by_order",
     "update_evaluation_status",
     "create_evaluation",
+    # Businesses
+    "save_business_profile",
+    "get_business_profile",
+    "get_business_by_phone",
+    "create_business_from_onboarding",
+    "update_business_preferences",
+    "get_business_context_for_agent",
+    "BusinessProfile",
+    "BusinessProduct",
+    "BusinessLocation",
+    "BusinessType",
 ]

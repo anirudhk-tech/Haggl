@@ -266,3 +266,74 @@ class EvaluationDocument(BaseModel):
     
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+# =============================================================================
+# Business Profile Documents
+# =============================================================================
+
+class BusinessType(str, Enum):
+    """Business types from onboarding."""
+    RESTAURANT = "restaurant"
+    BAKERY = "bakery"
+    CAFE = "cafe"
+    RETAIL = "retail"
+    OTHER = "other"
+
+
+class BusinessProduct(BaseModel):
+    """Product that a business regularly orders."""
+    product_id: int
+    name: str
+    category: str
+    unit: str
+    estimated_monthly: float = Field(description="Estimated monthly usage")
+    
+
+class BusinessLocation(BaseModel):
+    """Business location info."""
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    country: str = "USA"
+
+
+class BusinessProfile(BaseModel):
+    """MongoDB business profile document schema."""
+    business_id: str = Field(description="Unique business ID (often phone number)")
+    
+    # Basic info
+    business_name: Optional[str] = None
+    business_type: BusinessType = BusinessType.OTHER
+    
+    # Contact
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    
+    # Location
+    location: Optional[BusinessLocation] = None
+    
+    # Products (from onboarding)
+    products: list[BusinessProduct] = Field(default_factory=list)
+    
+    # Preferences (from evaluation agent learning)
+    preference_weights: dict = Field(
+        default_factory=lambda: {
+            "quality": 0.30,
+            "affordability": 0.35,
+            "shipping": 0.15,
+            "reliability": 0.20,
+        }
+    )
+    
+    # Onboarding status
+    onboarding_complete: bool = False
+    menu_uploaded: bool = False
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat()}

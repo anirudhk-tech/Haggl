@@ -28,9 +28,12 @@ from .tools import (
 # Storage imports
 try:
     from storage.conversations import append_message, update_context
+    from storage.businesses import get_business_context_for_agent
     STORAGE_ENABLED = True
 except ImportError:
     STORAGE_ENABLED = False
+    def get_business_context_for_agent(phone: str) -> dict:
+        return {"business_name": "your business", "business_type": "business", "products": []}
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +41,12 @@ logger = logging.getLogger(__name__)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-# System prompt for the message agent
-SYSTEM_PROMPT = """You are Haggl, an AI assistant that helps Acme Bakery order ingredients from local vendors.
+# System prompt template - business info will be injected
+SYSTEM_PROMPT_TEMPLATE = """You are Haggl, an AI assistant that helps {business_name} order ingredients from local vendors.
+
+BUSINESS INFO:
+- Type: {business_type}
+{products_section}
 
 WORKFLOW:
 1. When user mentions a product they need, ask for quantity if not provided
@@ -56,6 +63,24 @@ IMPORTANT: After sourcing vendors, ALWAYS immediately call place_order. Never as
 
 Keep messages SHORT - this is SMS/WhatsApp. Be friendly and efficient.
 """
+
+
+def _build_system_prompt(business_context: dict) -> str:
+    """Build system prompt with business context."""
+    # Format products section if available
+    products_section = ""
+    products = business_context.get("products", [])
+    if products:
+        product_lines = []
+        for p in products[:5]:  # Limit to 5 products in prompt
+            product_lines.append(f"  - {p['name']}: ~{p['monthly_usage']} {p['unit']}/month")
+        products_section = "- Regular products:\n" + "\n".join(product_lines)
+    
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        business_name=business_context.get("business_name", "your business"),
+        business_type=business_context.get("business_type", "business"),
+        products_section=products_section,
+    )
 
 
 class MessageAgent:
@@ -81,17 +106,25 @@ class MessageAgent:
     def _get_or_create_conversation(self, phone_number: str) -> ConversationState:
         """Get existing conversation or create new one."""
         if phone_number not in self._conversations:
+            # Fetch business context from MongoDB
+            business_context = get_business_context_for_agent(phone_number)
+            system_prompt = _build_system_prompt(business_context)
+            
             self._conversations[phone_number] = ConversationState(
                 phone_number=phone_number,
                 messages=[
                     ConversationMessage(
                         role=MessageRole.SYSTEM,
-                        content=SYSTEM_PROMPT,
+                        content=system_prompt,
                         timestamp=datetime.utcnow().isoformat(),
                     )
                 ],
+                context={
+                    "business_name": business_context.get("business_name"),
+                    "business_type": business_context.get("business_type"),
+                },
             )
-            logger.info(f"Created new conversation for {phone_number}")
+            logger.info(f"Created new conversation for {phone_number} (business: {business_context.get('business_name')})")
         return self._conversations[phone_number]
     
     async def process_message(self, incoming: IncomingSMS) -> str:
@@ -222,12 +255,15 @@ class MessageAgent:
                     vendor_names = [v.get("name", "Unknown") for v in vendors[:3]]
                     logger.info(f"Auto-triggering parallel calls to: {vendor_names}")
                     
+                    # Get business name from context (set during conversation creation)
+                    business_name = conversation.context.get("business_name") or "your business"
+                    
                     asyncio.create_task(
                         place_orders_parallel(
                             product=product,
                             quantity=quantity,
                             unit=unit,
-                            business_name="Acme Bakery",
+                            business_name=business_name,
                             vendors=vendors,
                             phone_number=conversation.phone_number,
                             on_status_update=send_status_update,
@@ -255,13 +291,16 @@ class MessageAgent:
                     logger.info(f"Placing parallel order: {quantity} {unit} of {product}")
                     logger.info(f"Using {len(vendors)} vendors from context" if vendors else "Using default test vendors")
                     
+                    # Get business name from context
+                    business_name = conversation.context.get("business_name") or "your business"
+                    
                     # Start parallel calls in background - don't wait for completion
                     asyncio.create_task(
                         place_orders_parallel(
                             product=product,
                             quantity=quantity,
                             unit=unit,
-                            business_name="Acme Bakery",
+                            business_name=business_name,
                             vendors=vendors if vendors else None,
                             phone_number=conversation.phone_number,
                             on_status_update=send_status_update,

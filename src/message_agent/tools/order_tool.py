@@ -34,6 +34,20 @@ try:
 except ImportError:
     EVAL_ENABLED = False
 
+# Event streaming imports
+try:
+    from events import (
+        emit_stage_change,
+        emit_log,
+        emit_call_update,
+        emit_evaluation_update,
+        emit_approval_required,
+        AgentStage,
+    )
+    EVENTS_ENABLED = True
+except ImportError:
+    EVENTS_ENABLED = False
+
 logger = logging.getLogger(__name__)
 
 # Configuration
@@ -287,6 +301,17 @@ async def place_orders_parallel(
     # Generate order ID
     order_id = f"order-{uuid.uuid4().hex[:8]}"
     
+    # Emit: Order created
+    if EVENTS_ENABLED:
+        await emit_stage_change(
+            AgentStage.MESSAGE_RECEIVED,
+            f"New order received: {quantity} {unit} of {product}",
+            order_id=order_id,
+            product=product,
+            quantity=quantity,
+            unit=unit,
+        )
+    
     # Create order in MongoDB
     if STORAGE_ENABLED and phone_number:
         try:
@@ -368,6 +393,23 @@ async def place_orders_parallel(
     
     logger.info(f"Starting parallel calls to {len(call_vendors)} vendors for {quantity} {unit} of {product}")
     
+    # Emit: Calling/Negotiating stage
+    if EVENTS_ENABLED:
+        await emit_stage_change(
+            AgentStage.CALLING,
+            f"Calling {num_vendors} vendors: {', '.join(vendor_names)}",
+            order_id=order_id,
+            vendors=vendor_names,
+        )
+        for v in call_vendors:
+            await emit_call_update(
+                AgentStage.NEGOTIATING,
+                f"Dialing {v.name}...",
+                order_id=order_id,
+                vendor_name=v.name,
+                call_status="dialing",
+            )
+    
     # Create tasks for parallel execution with metadata
     tasks = [
         call_single_vendor(
@@ -412,6 +454,26 @@ async def place_orders_parallel(
     
     logger.info(f"Calls complete: {len(successful)} confirmed, {len(failed)} failed")
     
+    # Emit: Calls complete updates
+    if EVENTS_ENABLED:
+        for r in successful:
+            await emit_call_update(
+                AgentStage.NEGOTIATING,
+                f"✓ {r.get('vendor_name')} confirmed at ${r.get('price', 'TBD')}/{unit}",
+                order_id=order_id,
+                vendor_name=r.get("vendor_name", "Unknown"),
+                call_status="confirmed",
+                price=r.get("price"),
+            )
+        for r in failed:
+            await emit_call_update(
+                AgentStage.NEGOTIATING,
+                f"✗ {r.get('vendor_name')} - {r.get('error', 'no answer')}",
+                order_id=order_id,
+                vendor_name=r.get("vendor_name", "Unknown"),
+                call_status="failed",
+            )
+    
     # === EVALUATION STEP ===
     # Don't send confirmation yet - first evaluate to pick best vendor
     
@@ -442,6 +504,15 @@ async def place_orders_parallel(
     # Notify user that we're evaluating
     await send_update(f"🔍 Got {len(successful)} confirmed! Evaluating best option...")
     
+    # Emit: Evaluating stage
+    if EVENTS_ENABLED:
+        await emit_stage_change(
+            AgentStage.EVALUATING,
+            f"Evaluating {len(successful)} confirmed vendors...",
+            order_id=order_id,
+            confirmed_count=len(successful),
+        )
+    
     # Run evaluation to pick best vendor
     if EVAL_ENABLED and len(successful) > 0:
         logger.info(f"Running evaluation on {len(successful)} confirmed vendors")
@@ -467,6 +538,24 @@ async def place_orders_parallel(
             if len(successful) > 1:
                 reason = eval_result.get("reason", "Best overall score")
                 await send_update(f"📊 Selected based on: {reason[:100]}")
+            
+            # Emit: Evaluation complete + Approval pending
+            if EVENTS_ENABLED:
+                await emit_evaluation_update(
+                    AgentStage.EVALUATING,
+                    f"Selected: {selected['vendor_name']} (score: {selected.get('final_score', 0):.1f})",
+                    order_id=order_id,
+                    selected_vendor=selected['vendor_name'],
+                    scores=selected.get('scores'),
+                )
+                await emit_approval_required(
+                    order_id=order_id,
+                    vendor_name=selected['vendor_name'],
+                    price=selected.get('price') or 0,
+                    product=product,
+                    quantity=quantity,
+                    unit=unit,
+                )
             
             # Update order status in MongoDB with evaluated selection
             if STORAGE_ENABLED:

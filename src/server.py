@@ -11,14 +11,25 @@ Main FastAPI server that exposes all agents as HTTP endpoints:
 
 import os
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+
+# Event streaming
+from events import (
+    get_event_bus,
+    emit_stage_change,
+    emit_log,
+    emit_order_approved,
+    AgentStage,
+)
 
 # Calling Agent imports
 from calling_agent import get_agent
@@ -62,6 +73,14 @@ from payment_agent import get_executor
 from payment_agent.schemas import PaymentMethod, PaymentRequest, PaymentResult, PaymentStatus
 from payment_agent.browserbase import BrowserbaseClient, PaymentPortalAutomator, InvoiceParser
 
+# Business storage imports
+from storage.businesses import (
+    create_business_from_onboarding,
+    get_business_profile,
+    get_business_by_phone,
+    get_business_context_for_agent,
+)
+
 # Load environment variables
 load_dotenv()
 
@@ -78,6 +97,17 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("🚀 Starting Haggl Agent server...")
     logger.info("   Agents: calling, message, sourcing, evaluation, payment")
+    
+    # Emit startup event
+    try:
+        await emit_log(
+            AgentStage.IDLE,
+            "Haggl server started. Ready for orders.",
+            level="info",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to emit startup event: {e}")
+    
     yield
     logger.info("Shutting down Haggl Agent server...")
 
@@ -740,6 +770,229 @@ async def parse_invoice_from_url(invoice_url: str):
         return {"url": invoice_url, "error": "Could not capture screenshot"}
     finally:
         await browser.close()
+
+
+# =============================================================================
+# Real-time Events (SSE)
+# =============================================================================
+
+@app.get("/events/stream")
+async def event_stream(request: Request):
+    """
+    Server-Sent Events endpoint for real-time agent updates.
+    
+    Connect from frontend with:
+    const eventSource = new EventSource('/events/stream');
+    eventSource.onmessage = (e) => console.log(JSON.parse(e.data));
+    """
+    client_id = str(uuid.uuid4())[:8]
+    
+    async def generate():
+        event_bus = get_event_bus()
+        try:
+            async for event in event_bus.subscribe(client_id):
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+                yield event
+        except Exception as e:
+            logger.error(f"SSE error for client {client_id}: {e}")
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@app.get("/events/recent")
+async def get_recent_events(limit: int = 20):
+    """Get recent events (for initial page load)."""
+    event_bus = get_event_bus()
+    events = event_bus.get_recent_events(limit)
+    return {
+        "events": [e.model_dump() for e in events],
+        "count": len(events),
+    }
+
+
+@app.post("/events/test")
+async def emit_test_event():
+    """Emit a test event (for debugging SSE connection)."""
+    await emit_log(
+        AgentStage.IDLE,
+        "Test event emitted! SSE is working.",
+        level="info",
+    )
+    return {"status": "ok", "message": "Test event emitted"}
+
+
+# =============================================================================
+# Business Profile / Onboarding
+# =============================================================================
+
+class OnboardingRequest(BaseModel):
+    """Request to save onboarding data."""
+    business_id: str = Field(description="Unique ID (phone number recommended)")
+    business_type: str = Field(description="Type: restaurant, bakery, cafe, retail, other")
+    products: list[dict] = Field(description="Selected products from onboarding")
+    business_name: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[dict] = None
+
+
+@app.post("/onboarding/complete")
+async def complete_onboarding(request: OnboardingRequest):
+    """
+    Save onboarding data to MongoDB.
+    
+    Called by frontend when user completes onboarding flow.
+    """
+    logger.info(f"Onboarding complete for business: {request.business_id}")
+    
+    profile = create_business_from_onboarding(
+        business_id=request.business_id,
+        business_type=request.business_type,
+        products=request.products,
+        phone=request.phone,
+        business_name=request.business_name,
+        location=request.location,
+    )
+    
+    if profile:
+        return {
+            "status": "success",
+            "business_id": profile.business_id,
+            "products_saved": len(profile.products),
+        }
+    
+    return {"status": "error", "message": "Failed to save onboarding data"}
+
+
+@app.get("/business/{business_id}")
+async def get_business(business_id: str):
+    """Get business profile by ID."""
+    profile = get_business_profile(business_id)
+    if profile:
+        return profile.model_dump()
+    raise HTTPException(status_code=404, detail=f"Business {business_id} not found")
+
+
+@app.get("/business/by-phone/{phone}")
+async def get_business_by_phone_endpoint(phone: str):
+    """Get business profile by phone number."""
+    profile = get_business_by_phone(phone)
+    if profile:
+        return profile.model_dump()
+    raise HTTPException(status_code=404, detail=f"Business with phone {phone} not found")
+
+
+class LinkPhoneRequest(BaseModel):
+    """Request to link phone number to business."""
+    business_id: str
+    phone: str
+
+
+@app.post("/business/link-phone")
+async def link_phone_to_business(request: LinkPhoneRequest):
+    """
+    Link a phone number to an existing business profile.
+    
+    This allows WhatsApp users to be associated with their business.
+    """
+    from storage.businesses import get_business_profile, save_business_profile
+    
+    profile = get_business_profile(request.business_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Business {request.business_id} not found")
+    
+    # Update phone
+    profile.phone = request.phone
+    
+    if save_business_profile(profile):
+        return {"status": "success", "message": f"Phone {request.phone} linked to {request.business_id}"}
+    
+    raise HTTPException(status_code=500, detail="Failed to link phone")
+
+
+# =============================================================================
+# Orders Management
+# =============================================================================
+
+# In-memory order store (would be MongoDB in production)
+_pending_approvals: dict[str, dict] = {}
+
+
+class ApproveOrderRequest(BaseModel):
+    """Request to approve an order."""
+    order_id: str
+
+
+@app.get("/orders/pending")
+async def get_pending_approvals():
+    """Get orders pending approval."""
+    return {
+        "orders": list(_pending_approvals.values()),
+        "count": len(_pending_approvals),
+    }
+
+
+@app.post("/orders/approve")
+async def approve_order(request: ApproveOrderRequest):
+    """
+    Approve an order for payment.
+    
+    This will eventually trigger x402 payment flow.
+    """
+    order_id = request.order_id
+    
+    if order_id in _pending_approvals:
+        order = _pending_approvals.pop(order_id)
+        vendor_name = order.get("vendor_name", "Unknown")
+        
+        # Emit approval event
+        await emit_order_approved(order_id, vendor_name)
+        
+        logger.info(f"✅ Order {order_id} approved!")
+        
+        return {
+            "status": "approved",
+            "order_id": order_id,
+            "message": f"Order approved! Will process payment to {vendor_name}.",
+        }
+    
+    # Even if not in pending, emit the event for demo purposes
+    await emit_order_approved(order_id, "Demo Vendor")
+    
+    return {
+        "status": "approved",
+        "order_id": order_id,
+        "message": "Order approved!",
+    }
+
+
+def add_pending_approval(
+    order_id: str,
+    vendor_name: str,
+    price: float,
+    product: str,
+    quantity: int,
+    unit: str,
+):
+    """Add an order to pending approvals (called by agents)."""
+    _pending_approvals[order_id] = {
+        "order_id": order_id,
+        "vendor_name": vendor_name,
+        "price": price,
+        "product": product,
+        "quantity": quantity,
+        "unit": unit,
+        "created_at": datetime.utcnow().isoformat(),
+    }
 
 
 # =============================================================================

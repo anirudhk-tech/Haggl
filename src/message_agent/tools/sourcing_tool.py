@@ -18,6 +18,13 @@ try:
 except ImportError:
     STORAGE_ENABLED = False
 
+# Event streaming imports
+try:
+    from events import emit_stage_change, emit_log, emit_vendor_update, AgentStage
+    EVENTS_ENABLED = True
+except ImportError:
+    EVENTS_ENABLED = False
+
 logger = logging.getLogger(__name__)
 
 # Hardcoded test phone numbers for vendors [0], [1], [2]
@@ -58,6 +65,16 @@ async def source_vendors(
     request_id = f"source-{uuid.uuid4().hex[:8]}"
     
     logger.info(f"Sourcing vendors for {quantity} {unit} of {product}")
+    
+    # Emit: Sourcing started
+    if EVENTS_ENABLED:
+        await emit_stage_change(
+            AgentStage.SOURCING,
+            f"Searching for {product} suppliers...",
+            order_id=request_id,
+            product=product,
+            quantity=quantity,
+        )
     
     # Build the sourcing request
     request = SourcingRequest(
@@ -120,6 +137,24 @@ async def source_vendors(
         logger.info(f"Sourced {len(all_vendors)} vendors, using top {len(vendors)} for {product}")
         for v in vendors:
             logger.info(f"  - {v['name']} ({v['phone']}) Q:{v['quality_score']:.0f} R:{v['reliability_score']:.0f}")
+        
+        # Emit: Vendors found
+        if EVENTS_ENABLED:
+            await emit_stage_change(
+                AgentStage.SOURCING,
+                f"Found {len(vendors)} vendors for {product}",
+                order_id=request_id,
+                vendor_count=len(vendors),
+            )
+            for v in vendors:
+                await emit_vendor_update(
+                    AgentStage.SOURCING,
+                    f"Found: {v['name']} - Q:{v['quality_score']:.0f} R:{v['reliability_score']:.0f}",
+                    order_id=request_id,
+                    vendor_name=v['name'],
+                    quality_score=v['quality_score'],
+                    reliability_score=v['reliability_score'],
+                )
         
         # Save to MongoDB with evaluation data
         if STORAGE_ENABLED and vendors:

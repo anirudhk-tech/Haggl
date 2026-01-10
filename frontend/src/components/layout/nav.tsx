@@ -13,11 +13,13 @@ import {
   Settings,
   Plus,
   ArrowUpRight,
+  Activity,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const navItems = [
   { href: "/", icon: Home, label: "Dashboard" },
+  { href: "/orders", icon: Activity, label: "Orders" },
   { href: "/vendors", icon: Users, label: "Vendors" },
   { href: "/payments", icon: CreditCard, label: "Payments" },
   { href: "/messages", icon: MessageSquare, label: "Messages" },
@@ -91,10 +93,10 @@ export function MobileNav() {
 
   const mobileItems = [
     { href: "/", icon: Home, label: "Home" },
-    { href: "/order/new", icon: Plus, label: "Order" },
+    { href: "/orders", icon: Activity, label: "Orders" },
+    { href: "/order/new", icon: Plus, label: "New" },
     { href: "/vendors", icon: Users, label: "Vendors" },
-    { href: "/payments", icon: CreditCard, label: "Payments" },
-    { href: "/messages", icon: MessageSquare, label: "Messages" },
+    { href: "/messages", icon: MessageSquare, label: "Chat" },
   ];
 
   return (

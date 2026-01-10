@@ -90,11 +90,38 @@ export default function Onboarding() {
     );
   };
 
-  const handleComplete = () => {
-    // Save selected products to user's account
-    // In real app, this would be an API call
+  const handleComplete = async () => {
+    // Get selected products with full data
+    const selectedProductData = products.filter(p => selectedProducts.includes(p.id));
+    
+    // Generate a business ID (in real app, this would be from auth)
+    const businessId = `business-${Date.now()}`;
+    
+    // Save to backend
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+      const res = await fetch(`${API_URL}/onboarding/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: businessId,
+          business_type: companyType,
+          products: selectedProductData,
+          business_name: `My ${companyType?.charAt(0).toUpperCase()}${companyType?.slice(1)}`,
+        }),
+      });
+      
+      if (res.ok) {
+        console.log('Onboarding saved to backend');
+      }
+    } catch (err) {
+      console.error('Failed to save onboarding to backend:', err);
+    }
+    
+    // Also save to localStorage for frontend state
     localStorage.setItem('onboarding_complete', 'true');
     localStorage.setItem('company_type', companyType || '');
+    localStorage.setItem('business_id', businessId);
     localStorage.setItem('selected_products', JSON.stringify(selectedProducts));
     router.push('/orders');
   };
