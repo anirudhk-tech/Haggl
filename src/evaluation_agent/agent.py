@@ -20,9 +20,13 @@ from .schemas import (
     BusinessPreferences,
     EvaluationRequest,
     EvaluationResponse,
+    ContactMethod,
+    VendorContactRequest,
+    VendorContactResponse,
 )
 from .tools.voyage_tool import score_vendors_with_voyage
 from .tools.exa_tool import get_sample_vendors
+from .tools.email_tool import send_invoice_request_email
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +169,223 @@ class EvaluationAgent:
         """Set the Voyage AI model to use for scoring."""
         self._voyage_model_id = model_id
         logger.info(f"Using Voyage model: {model_id}")
+
+    async def contact_best_vendor(
+        self,
+        request: VendorContactRequest,
+    ) -> VendorContactResponse:
+        """
+        Contact the best vendor to request invoice and payment directions.
+
+        Supports email, call, or SMS based on available contact info and preference.
+        """
+        method = request.preferred_method
+        error = None
+
+        # Try preferred method first, fall back to alternatives
+        if method == ContactMethod.EMAIL and request.vendor_email:
+            result = await self._send_invoice_email(request)
+            if result.success:
+                return result
+            error = result.error
+
+        if method == ContactMethod.CALL and request.vendor_phone:
+            result = await self._call_vendor_for_invoice(request)
+            if result.success:
+                return result
+            error = result.error
+
+        if method == ContactMethod.SMS and request.vendor_phone:
+            result = await self._send_invoice_sms(request)
+            if result.success:
+                return result
+            error = result.error
+
+        # Fallback: try available methods
+        if request.vendor_email and method != ContactMethod.EMAIL:
+            result = await self._send_invoice_email(request)
+            if result.success:
+                return result
+
+        if request.vendor_phone and method != ContactMethod.CALL:
+            result = await self._call_vendor_for_invoice(request)
+            if result.success:
+                return result
+
+        # No successful contact
+        return VendorContactResponse(
+            success=False,
+            method_used=method,
+            vendor_id=request.vendor_id,
+            vendor_name=request.vendor_name,
+            error=error or "No valid contact method available",
+        )
+
+    async def _send_invoice_email(
+        self,
+        request: VendorContactRequest,
+    ) -> VendorContactResponse:
+        """Send invoice request via email."""
+        if not request.vendor_email:
+            return VendorContactResponse(
+                success=False,
+                method_used=ContactMethod.EMAIL,
+                vendor_id=request.vendor_id,
+                vendor_name=request.vendor_name,
+                error="No email address available",
+            )
+
+        result = await send_invoice_request_email(
+            to_email=request.vendor_email,
+            vendor_name=request.vendor_name,
+            business_name=request.business_name,
+            product=request.product,
+            quantity=request.quantity,
+            unit=request.unit,
+            agreed_price=request.agreed_price,
+            reply_to=request.reply_to_email,
+        )
+
+        if result.get("error"):
+            return VendorContactResponse(
+                success=False,
+                method_used=ContactMethod.EMAIL,
+                vendor_id=request.vendor_id,
+                vendor_name=request.vendor_name,
+                error=result["error"],
+            )
+
+        logger.info(f"Invoice email sent to {request.vendor_name} ({request.vendor_email})")
+
+        return VendorContactResponse(
+            success=True,
+            method_used=ContactMethod.EMAIL,
+            vendor_id=request.vendor_id,
+            vendor_name=request.vendor_name,
+            message_id=result.get("email_id"),
+        )
+
+    async def _call_vendor_for_invoice(
+        self,
+        request: VendorContactRequest,
+    ) -> VendorContactResponse:
+        """Call vendor to request invoice and payment directions."""
+        if not request.vendor_phone:
+            return VendorContactResponse(
+                success=False,
+                method_used=ContactMethod.CALL,
+                vendor_id=request.vendor_id,
+                vendor_name=request.vendor_name,
+                error="No phone number available",
+            )
+
+        try:
+            # Import here to avoid circular imports
+            from ..calling_agent.tools.vapi_tool import call_vendor_and_wait
+            from ..calling_agent.schemas import CallVendorInput
+
+            # Create call input with invoice-specific prompt context
+            call_input = CallVendorInput(
+                phone_number=request.vendor_phone,
+                vendor_name=request.vendor_name,
+                business_name=request.business_name,
+                product=request.product,
+                quantity=int(request.quantity),
+                unit=request.unit,
+            )
+
+            result = await call_vendor_and_wait(call_input)
+
+            if not result.get("success"):
+                return VendorContactResponse(
+                    success=False,
+                    method_used=ContactMethod.CALL,
+                    vendor_id=request.vendor_id,
+                    vendor_name=request.vendor_name,
+                    error=result.get("error", "Call failed"),
+                )
+
+            logger.info(f"Invoice call completed with {request.vendor_name}")
+
+            return VendorContactResponse(
+                success=True,
+                method_used=ContactMethod.CALL,
+                vendor_id=request.vendor_id,
+                vendor_name=request.vendor_name,
+                message_id=result.get("call_id"),
+                call_outcome=result.get("outcome"),
+            )
+
+        except Exception as e:
+            logger.exception(f"Failed to call vendor {request.vendor_name}: {e}")
+            return VendorContactResponse(
+                success=False,
+                method_used=ContactMethod.CALL,
+                vendor_id=request.vendor_id,
+                vendor_name=request.vendor_name,
+                error=str(e),
+            )
+
+    async def _send_invoice_sms(
+        self,
+        request: VendorContactRequest,
+    ) -> VendorContactResponse:
+        """Send invoice request via SMS/WhatsApp."""
+        if not request.vendor_phone:
+            return VendorContactResponse(
+                success=False,
+                method_used=ContactMethod.SMS,
+                vendor_id=request.vendor_id,
+                vendor_name=request.vendor_name,
+                error="No phone number available",
+            )
+
+        try:
+            from ..message_agent.tools.vonage_tool import send_sms
+            from ..message_agent.schemas import OutgoingSMS
+
+            message_body = (
+                f"Hi {request.vendor_name}, this is {request.business_name}. "
+                f"Thank you for confirming our order of {request.quantity} {request.unit} of {request.product}. "
+                f"Could you please send us an invoice with your payment directions? "
+                f"We're ready to process payment. Thank you!"
+            )
+
+            sms = OutgoingSMS(
+                to_number=request.vendor_phone,
+                body=message_body,
+            )
+
+            result = await send_sms(sms)
+
+            if result.get("error"):
+                return VendorContactResponse(
+                    success=False,
+                    method_used=ContactMethod.SMS,
+                    vendor_id=request.vendor_id,
+                    vendor_name=request.vendor_name,
+                    error=result["error"],
+                )
+
+            logger.info(f"Invoice SMS sent to {request.vendor_name} ({request.vendor_phone})")
+
+            return VendorContactResponse(
+                success=True,
+                method_used=ContactMethod.SMS,
+                vendor_id=request.vendor_id,
+                vendor_name=request.vendor_name,
+                message_id=result.get("message_id"),
+            )
+
+        except Exception as e:
+            logger.exception(f"Failed to send SMS to vendor {request.vendor_name}: {e}")
+            return VendorContactResponse(
+                success=False,
+                method_used=ContactMethod.SMS,
+                vendor_id=request.vendor_id,
+                vendor_name=request.vendor_name,
+                error=str(e),
+            )
 
 
 # Global instance

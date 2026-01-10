@@ -4,14 +4,21 @@ import { Badge } from "@/components/ui/badge";
 import { VendorRadarChart } from "./radar-chart";
 import type { Vendor } from "@/lib/types";
 import Link from "next/link";
-import { ArrowUpRight, MapPin } from "lucide-react";
+import { ArrowUpRight, MapPin, DollarSign } from "lucide-react";
 
 interface VendorCardProps {
   vendor: Vendor;
   index: number;
+  onChartClick?: (vendor: Vendor) => void;
 }
 
-export function VendorCard({ vendor, index }: VendorCardProps) {
+export function VendorCard({ vendor, index, onChartClick }: VendorCardProps) {
+  const handleChartClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onChartClick?.(vendor);
+  };
+
   return (
     <Link
       href={`/vendors/${vendor.vendor_id}`}
@@ -22,9 +29,16 @@ export function VendorCard({ vendor, index }: VendorCardProps) {
         {String(index + 1).padStart(2, "0")}
       </span>
 
-      {/* Radar Chart */}
-      <div className="flex-shrink-0 relative z-10">
-        <VendorRadarChart scores={vendor.scores} size="sm" />
+      {/* Radar Chart - Clickable for corrections */}
+      <div
+        className="flex-shrink-0 relative z-20"
+        onClick={handleChartClick}
+      >
+        <VendorRadarChart
+          scores={vendor.scores}
+          size="sm"
+          interactive={!!onChartClick}
+        />
       </div>
 
       {/* Vendor Info */}
@@ -34,12 +48,20 @@ export function VendorCard({ vendor, index }: VendorCardProps) {
             <h3 className="font-medium text-sm">
               {vendor.vendor_name}
             </h3>
-            {vendor.distance_miles && (
-              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1 font-mono">
-                <MapPin className="h-3 w-3" />
-                {vendor.distance_miles.toFixed(1)} mi
-              </p>
-            )}
+            <div className="flex items-center gap-3 mt-1">
+              {vendor.price_per_unit && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono">
+                  <DollarSign className="h-3 w-3" />
+                  {vendor.price_per_unit.toFixed(2)}/{vendor.unit}
+                </span>
+              )}
+              {vendor.distance_miles && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono">
+                  <MapPin className="h-3 w-3" />
+                  {vendor.distance_miles.toFixed(1)} mi
+                </span>
+              )}
+            </div>
           </div>
           <div className="text-right">
             <span className="text-2xl font-medium tracking-tight font-mono">

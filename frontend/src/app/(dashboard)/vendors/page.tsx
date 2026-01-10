@@ -1,48 +1,17 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Input } from "@/components/ui/input";
 import { Header } from "@/components/layout/nav";
 import { VendorCard } from "@/components/vendors/vendor-card";
-import { PreferenceControls } from "@/components/vendors/preference-controls";
-import { demoVendors, defaultWeights } from "@/lib/demo-data";
-import type { PreferenceWeights, Vendor } from "@/lib/types";
-import { Search, SlidersHorizontal, RotateCcw } from "lucide-react";
-import { toast } from "sonner";
-
-function recalculateScores(vendors: Vendor[], weights: PreferenceWeights): Vendor[] {
-  return vendors.map((vendor) => {
-    const parameterScore =
-      weights.quality * (vendor.scores.quality / 100) +
-      weights.affordability * (vendor.scores.affordability / 100) +
-      weights.shipping * (vendor.scores.shipping / 100) +
-      weights.reliability * (vendor.scores.reliability / 100);
-
-    const finalScore = 0.3 * vendor.embedding_score + 0.7 * parameterScore;
-
-    return {
-      ...vendor,
-      parameter_score: parameterScore,
-      final_score: finalScore * 100,
-    };
-  }).sort((a, b) => b.final_score - a.final_score)
-    .map((v, i) => ({ ...v, rank: i + 1 }));
-}
-
-function normalizeWeights(weights: PreferenceWeights): PreferenceWeights {
-  const total = weights.quality + weights.affordability + weights.shipping + weights.reliability;
-  return {
-    quality: weights.quality / total,
-    affordability: weights.affordability / total,
-    shipping: weights.shipping / total,
-    reliability: weights.reliability / total,
-  };
-}
+import { CorrectionDialog } from "@/components/vendors/correction-dialog";
+import { demoVendors } from "@/lib/demo-data";
+import type { Vendor } from "@/lib/types";
+import { Search } from "lucide-react";
 
 export default function VendorsPage() {
   const [search, setSearch] = useState("");
-  const [weights, setWeights] = useState<PreferenceWeights>(defaultWeights);
-  const [showPreferences, setShowPreferences] = useState(false);
+  const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
+  const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
 
   const vendors = useMemo(() => {
     let filtered = demoVendors;
@@ -54,28 +23,21 @@ export default function VendorsPage() {
           v.products.some((p) => p.toLowerCase().includes(lower))
       );
     }
-    return recalculateScores(filtered, weights);
-  }, [search, weights]);
+    // Sort by final_score and assign ranks
+    return filtered
+      .sort((a, b) => b.final_score - a.final_score)
+      .map((v, i) => ({ ...v, rank: i + 1 }));
+  }, [search]);
 
-  const handleWeightUpdate = (param: keyof PreferenceWeights, direction: "up" | "down") => {
-    setWeights((prev) => {
-      const delta = direction === "up" ? 0.05 : -0.05;
-      const newValue = Math.max(0.05, Math.min(0.6, prev[param] + delta));
-
-      const updated = { ...prev, [param]: newValue };
-      const normalized = normalizeWeights(updated);
-
-      toast.success(
-        `${param.charAt(0).toUpperCase() + param.slice(1)} ${direction === "up" ? "increased" : "decreased"} to ${Math.round(normalized[param] * 100)}%`
-      );
-
-      return normalized;
-    });
+  const handleChartClick = (vendor: Vendor) => {
+    setSelectedVendor(vendor);
+    setCorrectionDialogOpen(true);
   };
 
-  const handleReset = () => {
-    setWeights(defaultWeights);
-    toast.success("Preferences reset to defaults");
+  const handleCorrection = (vendorId: string, parameter: string, direction: "up" | "down") => {
+    // In production, this would call the backend API
+    console.log("Correction:", { vendorId, parameter, direction });
+    // The backend would update the model and return new scores
   };
 
   return (
@@ -86,60 +48,38 @@ export default function VendorsPage() {
         <header className="hidden md:block px-8 py-8 border-b border-border">
           <h1 className="page-header">Vendors</h1>
           <p className="page-header-subtitle mt-1">
-            {vendors.length} vendors ranked by your preferences
+            {vendors.length} vendors ranked by model predictions
           </p>
         </header>
 
-        {/* Search and Filter Bar */}
-        <div className="flex border-b border-border">
-          <div className="flex-1 flex items-center gap-3 px-6 py-3 border-r border-border">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search vendors or products..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
-            />
-          </div>
-          <button
-            className={`fill-hover px-6 py-3 flex items-center gap-2 text-sm font-medium uppercase tracking-wider ${showPreferences ? 'filled' : ''}`}
-            onClick={() => setShowPreferences(!showPreferences)}
-          >
-            <SlidersHorizontal className="h-4 w-4 relative z-10" />
-            <span className="relative z-10">Preferences</span>
-          </button>
+        {/* Search Bar */}
+        <div className="flex items-center gap-3 px-6 py-3 border-b border-border">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search vendors or products..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
+          />
         </div>
 
-        {/* Preference Controls */}
-        {showPreferences && (
-          <div className="border-b border-border animate-slide-up">
-            <div className="px-8 py-4 border-b border-border flex items-center justify-between">
-              <h2 className="section-header">Your Preferences</h2>
-              <button
-                className="fill-hover px-3 py-1.5 text-xs uppercase tracking-wider flex items-center gap-1 border border-border"
-                onClick={handleReset}
-              >
-                <RotateCcw className="h-3 w-3 relative z-10" />
-                <span className="relative z-10">Reset</span>
-              </button>
-            </div>
-            <div className="px-8 py-4">
-              <PreferenceControls
-                weights={weights}
-                onUpdate={handleWeightUpdate}
-              />
-              <p className="text-xs text-muted-foreground mt-4">
-                Click arrows to adjust importance. Vendors re-rank in real-time.
-              </p>
-            </div>
-          </div>
-        )}
+        {/* Instructions */}
+        <div className="px-6 py-3 border-b border-border bg-secondary/30">
+          <p className="text-xs text-muted-foreground">
+            Click on any vendor's score chart to view details and submit corrections to improve predictions.
+          </p>
+        </div>
 
         {/* Vendor List */}
         <div className="stagger-children">
           {vendors.map((vendor, index) => (
-            <VendorCard key={vendor.vendor_id} vendor={vendor} index={index} />
+            <VendorCard
+              key={vendor.vendor_id}
+              vendor={vendor}
+              index={index}
+              onChartClick={handleChartClick}
+            />
           ))}
         </div>
 
@@ -155,6 +95,16 @@ export default function VendorsPage() {
           </div>
         )}
       </div>
+
+      {/* Correction Dialog */}
+      {selectedVendor && (
+        <CorrectionDialog
+          vendor={selectedVendor}
+          open={correctionDialogOpen}
+          onOpenChange={setCorrectionDialogOpen}
+          onCorrection={handleCorrection}
+        />
+      )}
     </>
   );
 }

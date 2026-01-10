@@ -120,3 +120,37 @@ class TrainingExample(BaseModel):
     query: str
     positive: str
     negative: str
+
+
+class ContactMethod(str, Enum):
+    """Method to contact the vendor."""
+    EMAIL = "email"
+    CALL = "call"
+    SMS = "sms"
+
+
+class VendorContactRequest(BaseModel):
+    """Request to contact the best vendor for invoice/payment."""
+    business_id: str
+    business_name: str
+    vendor_id: str
+    vendor_name: str
+    vendor_email: Optional[str] = None
+    vendor_phone: Optional[str] = None
+    product: str
+    quantity: float
+    unit: str = "unit"
+    agreed_price: Optional[float] = None
+    preferred_method: ContactMethod = ContactMethod.EMAIL
+    reply_to_email: Optional[str] = None
+
+
+class VendorContactResponse(BaseModel):
+    """Response from contacting a vendor."""
+    success: bool
+    method_used: ContactMethod
+    vendor_id: str
+    vendor_name: str
+    message_id: Optional[str] = None  # Email ID or Call ID
+    call_outcome: Optional[dict] = None  # If call was made
+    error: Optional[str] = None
