@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-IngredientAI Calling Agent - Main Entry Point
+Haggl Agent Server - Main Entry Point
 
 Usage:
     # Start the server
     python main.py serve --port 8001
     
     # Or use uvicorn directly
-    uvicorn src.calling_agent.server:app --host 0.0.0.0 --port 8001 --reload
+    uvicorn src.server:app --host 0.0.0.0 --port 8001 --reload
 """
 
 import argparse
@@ -19,14 +19,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from dotenv import load_dotenv
 
-# Load environment variables from parent directory
+# Load environment variables
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env.local"))
 load_dotenv()
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Haggl Calling Agent"
+        description="Haggl Agent Server"
     )
     subparsers = parser.add_subparsers(dest="command", help="Commands")
     
@@ -54,7 +54,7 @@ def main():
     if args.command == "serve":
         import uvicorn
         uvicorn.run(
-            "src.calling_agent.server:app",
+            "src.server:app",
             host=args.host,
             port=args.port,
             reload=args.reload,
