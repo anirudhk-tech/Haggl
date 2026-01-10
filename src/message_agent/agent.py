@@ -17,7 +17,13 @@ from .schemas import (
     ConversationState,
     MessageRole,
 )
-from .tools import send_sms, place_order_with_updates, PLACE_ORDER_FUNCTION
+from .tools import (
+    send_sms,
+    place_order_with_updates,
+    PLACE_ORDER_FUNCTION,
+    source_vendors,
+    SOURCE_VENDORS_FUNCTION,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,18 +32,20 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 # System prompt for the message agent
-SYSTEM_PROMPT = """You are Haggl, an AI assistant that helps restaurant and bakery owners order ingredients from local vendors.
+SYSTEM_PROMPT = """You are Haggl, an AI assistant that helps Acme Bakery order ingredients from local vendors.
 
-When a user wants to order something:
-1. Ask clarifying questions if needed (quantity, timeline)
-2. Use the place_order function to call a vendor and place the order
-3. Let them know you're calling the vendor
+WORKFLOW:
+1. When user mentions a product they need, use source_vendors to find suppliers
+2. Present the vendor options to the user
+3. When user confirms which vendor to call, use place_order to call them
 
 EXAMPLE:
 User: "I need eggs"
-You: "How many dozen do you need?"
+You: "How many dozen?"
 User: "20 dozen"
-You: *calls place_order* "Got it! I'm calling the vendor now to order 20 dozen eggs. I'll update you once I hear back!"
+You: *calls source_vendors* "Found 3 vendors! 1) Farm Fresh ($4/dz) 2) Local Eggs Co ($3.50/dz) 3) Happy Hens ($5/dz). Which one should I call?"
+User: "Call the second one"
+You: *calls place_order* "Calling Local Eggs Co now for 20 dozen eggs. I'll update you!"
 
 Keep messages SHORT - this is SMS/WhatsApp. Be friendly and efficient.
 """
@@ -143,7 +151,7 @@ class MessageAgent:
             response = client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=messages,
-                tools=[PLACE_ORDER_FUNCTION],
+                tools=[SOURCE_VENDORS_FUNCTION, PLACE_ORDER_FUNCTION],
                 tool_choice="auto",
             )
             
@@ -157,7 +165,52 @@ class MessageAgent:
                 
                 logger.info(f"OpenAI wants to call: {function_name}({function_args})")
                 
-                if function_name == "place_order":
+                if function_name == "source_vendors":
+                    # Search for vendors
+                    result = await source_vendors(
+                        product=function_args.get("product", "eggs"),
+                        quantity=function_args.get("quantity", 10),
+                        unit=function_args.get("unit", "dozen"),
+                        quality=function_args.get("quality"),
+                    )
+                    
+                    logger.info(f"Sourcing result: {result}")
+                    
+                    # Store vendors in conversation for later reference
+                    conversation.context["last_vendors"] = result.get("vendors", [])
+                    conversation.context["last_product"] = function_args.get("product")
+                    conversation.context["last_quantity"] = function_args.get("quantity", 10)
+                    conversation.context["last_unit"] = function_args.get("unit", "dozen")
+                    
+                    # Add function call and result to messages for context
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": tool_call.id,
+                                "type": "function",
+                                "function": {
+                                    "name": function_name,
+                                    "arguments": tool_call.function.arguments,
+                                }
+                            }
+                        ]
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps(result),
+                    })
+                    
+                    # Get response from OpenAI with vendor results
+                    final_response = client.chat.completions.create(
+                        model=OPENAI_MODEL,
+                        messages=messages,
+                    )
+                    return final_response.choices[0].message.content
+                
+                elif function_name == "place_order":
                     import asyncio
                     
                     # Create callback to send status updates via WhatsApp
