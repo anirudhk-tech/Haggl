@@ -1,15 +1,15 @@
 # Agent Development Kit (ADK) Setup Guide
-## IngredientAI - NVIDIA NeMo Agent Toolkit Configuration
+## Haggl - NVIDIA NeMo Agent Toolkit Configuration
 
-**Version:** 2.0
-**Date:** January 9, 2026
+**Version:** 2.1
+**Date:** January 10, 2026
 **Framework:** NVIDIA NeMo Agent Toolkit (NAT)
 
 ---
 
 ## Overview
 
-This guide covers setting up the 4 IngredientAI agents using **NVIDIA NeMo Agent Toolkit (NAT)**, an open-source library for connecting, evaluating, and accelerating teams of AI agents.
+This guide covers setting up the 4 Haggl agents using **NVIDIA NeMo Agent Toolkit (NAT)**, an open-source library for connecting, evaluating, and accelerating teams of AI agents.
 
 ### Why NeMo Agent Toolkit?
 
@@ -34,8 +34,8 @@ source .venv_nat/bin/activate
 # Install NeMo Agent Toolkit with all plugins
 pip install "nvidia-nat[all]"
 
-# Additional dependencies for IngredientAI
-pip install anthropic pymongo exa-py httpx playwright pydantic
+# Additional dependencies for Haggl
+pip install anthropic pymongo exa-py httpx playwright pydantic twilio
 playwright install chromium
 
 # Verify installation
@@ -47,16 +47,17 @@ nat --help
 ## Project Structure
 
 ```
-ingredient-ai/
+haggl/
 ├── pyproject.toml
 ├── configs/
 │   ├── sourcing.yml          # Sourcing agent config
 │   ├── negotiation.yml       # Negotiation agent config
 │   ├── evaluation.yml        # Evaluation agent config
 │   ├── payment.yml           # Payment agent config
+│   ├── sms.yml               # SMS agent config
 │   └── orchestrator.yml      # Multi-agent orchestrator
 ├── src/
-│   └── ingredient_ai/
+│   └── haggl/
 │       ├── __init__.py
 │       ├── register.py       # Tool registration
 │       ├── tools/
@@ -65,10 +66,13 @@ ingredient-ai/
 │       │   ├── vapi_tools.py     # Negotiation tools (Vapi)
 │       │   ├── mongo_tools.py    # Database tools
 │       │   ├── payment_tools.py  # x402 authorization
-│       │   └── browser_tools.py  # Computer Use (ACH)
+│       │   ├── browser_tools.py  # Computer Use (ACH)
+│       │   ├── sms_tools.py      # SMS tools (Twilio)
+│       │   └── csv_tools.py      # CSV ingestion tools
 │       └── schemas/
 │           ├── __init__.py
 │           └── inputs.py         # Pydantic input schemas
+├── frontend/                     # Dashboard UI
 └── main.py
 ```
 
@@ -76,10 +80,10 @@ ingredient-ai/
 
 ```bash
 # Create NAT workflow project
-nat workflow create ingredient_ai
+nat workflow create haggl
 
 # Navigate to project
-cd ingredient_ai
+cd haggl
 ```
 
 ---
@@ -87,7 +91,7 @@ cd ingredient_ai
 ## Input Schemas (Pydantic)
 
 ```python
-# src/ingredient_ai/schemas/inputs.py
+# src/haggl/schemas/inputs.py
 from pydantic import BaseModel, Field
 
 
@@ -224,7 +228,7 @@ class InjectCredentialsInput(BaseModel):
 ### Sourcing Tools (Exa.ai)
 
 ```python
-# src/ingredient_ai/tools/exa_tools.py
+# src/haggl/tools/exa_tools.py
 import os
 import json
 from exa_py import Exa
@@ -339,7 +343,7 @@ Return ONLY valid JSON:
 ### Negotiation Tools (Vapi TTS)
 
 ```python
-# src/ingredient_ai/tools/vapi_tools.py
+# src/haggl/tools/vapi_tools.py
 import os
 import json
 import httpx
@@ -501,7 +505,7 @@ Return ONLY valid JSON:
 ### MongoDB Tools
 
 ```python
-# src/ingredient_ai/tools/mongo_tools.py
+# src/haggl/tools/mongo_tools.py
 import os
 import json
 from pymongo import MongoClient
@@ -521,7 +525,7 @@ def get_db():
     global db
     if db is None:
         client = MongoClient(os.getenv("MONGODB_URI"))
-        db = client["ingredient_ai"]
+        db = client["haggl"]
     return db
 
 
@@ -639,7 +643,7 @@ async def get_pending_invoices_tool(config: GetPendingInvoicesConfig, builder: B
 ### Payment Tools (x402 + Browser)
 
 ```python
-# src/ingredient_ai/tools/payment_tools.py
+# src/haggl/tools/payment_tools.py
 import os
 import json
 import base64
@@ -733,7 +737,7 @@ async def x402_authorize_tool(config: X402AuthorizeConfig, builder: Builder):
 ### Browser Tools (Computer Use for ACH)
 
 ```python
-# src/ingredient_ai/tools/browser_tools.py
+# src/haggl/tools/browser_tools.py
 import os
 import json
 import base64
@@ -958,14 +962,318 @@ async def close_browser_tool(config: CloseBrowserConfig, builder: Builder):
     )
 ```
 
+### SMS Tools (Twilio)
+
+```python
+# src/haggl/tools/sms_tools.py
+import os
+import json
+from twilio.rest import Client
+from anthropic import Anthropic
+
+from nat.data_models.function import FunctionBaseConfig, register_function
+from nat.data_models.function_info import FunctionInfo
+from nat.builder import Builder
+
+from pydantic import BaseModel, Field
+
+
+# =====================
+# Schemas
+# =====================
+
+class ParseSMSInput(BaseModel):
+    message: str = Field(description="SMS message to parse")
+    phone: str = Field(description="Phone number of sender")
+
+
+class SendSMSInput(BaseModel):
+    to: str = Field(description="Recipient phone number")
+    message: str = Field(description="Message to send")
+
+
+class HandleApprovalInput(BaseModel):
+    phone: str = Field(description="Phone number of approver")
+    approved: bool = Field(description="Whether to approve or deny")
+
+
+class GetOrderHistoryInput(BaseModel):
+    phone: str = Field(description="Phone number to look up")
+    ingredient: str = Field(description="Ingredient to find", default=None)
+
+
+# =====================
+# Tool Implementations
+# =====================
+
+TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE = os.getenv("TWILIO_PHONE_NUMBER")
+
+
+class ParseSMSConfig(FunctionBaseConfig, name="parse_sms"):
+    """Parse SMS message intent using Claude."""
+    pass
+
+
+class SendSMSConfig(FunctionBaseConfig, name="send_sms"):
+    """Send SMS via Twilio."""
+    pass
+
+
+class HandleApprovalConfig(FunctionBaseConfig, name="handle_approval"):
+    """Handle SMS approval/denial of pending purchase."""
+    pass
+
+
+class GetOrderHistoryConfig(FunctionBaseConfig, name="get_order_history"):
+    """Get order history for reordering."""
+    pass
+
+
+@register_function(config_type=ParseSMSConfig)
+async def parse_sms_tool(config: ParseSMSConfig, builder: Builder):
+    """Register SMS parsing tool."""
+
+    claude = Anthropic()
+
+    async def _parse_sms(message: str, phone: str) -> str:
+        """Parse SMS intent using Claude."""
+
+        response = claude.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=200,
+            messages=[{
+                "role": "user",
+                "content": f"""Parse this SMS from a business owner ordering supplies.
+
+MESSAGE: {message}
+
+Return JSON:
+{{
+  "type": "reorder" | "new_order" | "approve" | "deny" | "status" | "help",
+  "ingredient": "string or null",
+  "items": [{{"name": "string", "quantity": "string"}}] or null,
+  "confidence": 0-1
+}}
+
+JSON:"""
+            }]
+        )
+
+        return response.content[0].text
+
+    yield FunctionInfo.from_fn(
+        _parse_sms,
+        input_schema=ParseSMSInput,
+        description="Parse SMS message intent using Claude NLU"
+    )
+
+
+@register_function(config_type=SendSMSConfig)
+async def send_sms_tool(config: SendSMSConfig, builder: Builder):
+    """Register SMS sending tool."""
+
+    twilio = Client(TWILIO_SID, TWILIO_AUTH)
+
+    async def _send_sms(to: str, message: str) -> str:
+        """Send SMS via Twilio."""
+
+        msg = twilio.messages.create(
+            body=message,
+            from_=TWILIO_PHONE,
+            to=to
+        )
+
+        return json.dumps({
+            "status": "sent",
+            "sid": msg.sid,
+            "to": to
+        }, indent=2)
+
+    yield FunctionInfo.from_fn(
+        _send_sms,
+        input_schema=SendSMSInput,
+        description="Send SMS message via Twilio"
+    )
+
+
+@register_function(config_type=HandleApprovalConfig)
+async def handle_approval_tool(config: HandleApprovalConfig, builder: Builder):
+    """Register approval handling tool."""
+
+    from pymongo import MongoClient
+    db = MongoClient(os.getenv("MONGODB_URI"))["haggl"]
+
+    async def _handle_approval(phone: str, approved: bool) -> str:
+        """Handle SMS approval/denial."""
+
+        pending = db.pending_approvals.find_one_and_delete({"phone": phone})
+
+        if not pending:
+            return json.dumps({
+                "status": "no_pending",
+                "message": "No pending approval found"
+            })
+
+        if approved:
+            # Move to processing queue
+            db.orders.insert_one({
+                **pending["order"],
+                "status": "approved",
+                "approved_at": datetime.now()
+            })
+
+            return json.dumps({
+                "status": "approved",
+                "order": pending["order"]
+            })
+        else:
+            return json.dumps({
+                "status": "denied",
+                "message": "Order cancelled"
+            })
+
+    yield FunctionInfo.from_fn(
+        _handle_approval,
+        input_schema=HandleApprovalInput,
+        description="Handle SMS approval or denial of pending purchase"
+    )
+
+
+@register_function(config_type=GetOrderHistoryConfig)
+async def get_order_history_tool(config: GetOrderHistoryConfig, builder: Builder):
+    """Register order history lookup tool."""
+
+    from pymongo import MongoClient
+    db = MongoClient(os.getenv("MONGODB_URI"))["haggl"]
+
+    async def _get_order_history(phone: str, ingredient: str = None) -> str:
+        """Get order history for reordering."""
+
+        query = {"phone": phone}
+        if ingredient:
+            query["ingredient"] = {"$regex": ingredient, "$options": "i"}
+
+        orders = list(db.order_history.find(
+            query,
+            sort=[("timestamp", -1)],
+            limit=5
+        ))
+
+        # Convert ObjectId to string
+        for order in orders:
+            order["_id"] = str(order["_id"])
+
+        return json.dumps({
+            "count": len(orders),
+            "orders": orders
+        }, indent=2)
+
+    yield FunctionInfo.from_fn(
+        _get_order_history,
+        input_schema=GetOrderHistoryInput,
+        description="Get order history for a phone number, optionally filtered by ingredient"
+    )
+```
+
+### CSV Tools
+
+```python
+# src/haggl/tools/csv_tools.py
+import csv
+import re
+from io import StringIO
+from typing import List, Dict
+
+from nat.data_models.function import FunctionBaseConfig, register_function
+from nat.data_models.function_info import FunctionInfo
+from nat.builder import Builder
+
+from pydantic import BaseModel, Field
+
+
+class ParseCSVInput(BaseModel):
+    csv_content: str = Field(description="CSV content as string")
+
+
+class ParseCSVConfig(FunctionBaseConfig, name="parse_csv"):
+    """Parse CSV content into structured ingredient list."""
+    pass
+
+
+@register_function(config_type=ParseCSVConfig)
+async def parse_csv_tool(config: ParseCSVConfig, builder: Builder):
+    """Register CSV parsing tool."""
+
+    COLUMN_ALIASES = {
+        "item": "ingredient",
+        "product": "ingredient",
+        "name": "ingredient",
+        "qty": "quantity",
+        "amount": "quantity",
+        "grade": "quality",
+        "type": "quality"
+    }
+
+    def _normalize_column(col: str) -> str:
+        col_lower = col.lower().strip()
+        return COLUMN_ALIASES.get(col_lower, col_lower)
+
+    def _parse_quantity(qty_str: str) -> tuple:
+        match = re.match(r'(\d+(?:\.\d+)?)\s*(\w+)?', str(qty_str).strip())
+        if match:
+            return float(match.group(1)), match.group(2) or "units"
+        return 1, "units"
+
+    async def _parse_csv(csv_content: str) -> str:
+        """Parse CSV into ingredient list."""
+
+        try:
+            dialect = csv.Sniffer().sniff(csv_content[:1024])
+        except csv.Error:
+            dialect = csv.excel
+
+        reader = csv.DictReader(StringIO(csv_content), dialect=dialect)
+
+        if reader.fieldnames:
+            reader.fieldnames = [_normalize_column(c) for c in reader.fieldnames]
+
+        ingredients = []
+        for row in reader:
+            if not row.get("ingredient"):
+                continue
+
+            quantity, unit = _parse_quantity(row.get("quantity", "1"))
+
+            ingredients.append({
+                "name": row["ingredient"].strip(),
+                "quantity": f"{quantity} {unit}",
+                "quality": row.get("quality", "standard").strip() if row.get("quality") else "standard",
+                "priority": row.get("priority", "medium").strip() if row.get("priority") else "medium"
+            })
+
+        return json.dumps({
+            "status": "success",
+            "count": len(ingredients),
+            "ingredients": ingredients
+        }, indent=2)
+
+    yield FunctionInfo.from_fn(
+        _parse_csv,
+        input_schema=ParseCSVInput,
+        description="Parse CSV content into structured ingredient list"
+    )
+```
+
 ---
 
 ## Tool Registration
 
 ```python
-# src/ingredient_ai/register.py
+# src/haggl/register.py
 """
-Register all IngredientAI tools with NeMo Agent Toolkit.
+Register all Haggl tools with NeMo Agent Toolkit.
 """
 
 # Import all tool modules to trigger registration
@@ -974,6 +1282,8 @@ from .tools import vapi_tools
 from .tools import mongo_tools
 from .tools import payment_tools
 from .tools import browser_tools
+from .tools import sms_tools
+from .tools import csv_tools
 ```
 
 ---
@@ -986,9 +1296,9 @@ from .tools import browser_tools
 # configs/sourcing.yml
 functions:
   search_suppliers:
-    _type: ingredient_ai/search_suppliers
+    _type: haggl/search_suppliers
   extract_supplier_info:
-    _type: ingredient_ai/extract_supplier_info
+    _type: haggl/extract_supplier_info
 
 llms:
   sourcing_llm:
@@ -1026,11 +1336,11 @@ workflow:
 # configs/negotiation.yml
 functions:
   make_phone_call:
-    _type: ingredient_ai/make_phone_call
+    _type: haggl/make_phone_call
   get_call_transcript:
-    _type: ingredient_ai/get_call_transcript
+    _type: haggl/get_call_transcript
   parse_negotiation:
-    _type: ingredient_ai/parse_negotiation
+    _type: haggl/parse_negotiation
 
 llms:
   negotiation_llm:
@@ -1073,11 +1383,11 @@ workflow:
 # configs/evaluation.yml
 functions:
   get_all_suppliers:
-    _type: ingredient_ai/get_all_suppliers
+    _type: haggl/get_all_suppliers
   get_all_negotiations:
-    _type: ingredient_ai/get_all_negotiations
+    _type: haggl/get_all_negotiations
   save_decision:
-    _type: ingredient_ai/save_decision
+    _type: haggl/save_decision
 
 llms:
   evaluation_llm:
@@ -1119,23 +1429,23 @@ workflow:
 # configs/payment.yml
 functions:
   check_wallet_balance:
-    _type: ingredient_ai/check_wallet_balance
+    _type: haggl/check_wallet_balance
   x402_authorize:
-    _type: ingredient_ai/x402_authorize
+    _type: haggl/x402_authorize
   get_pending_invoices:
-    _type: ingredient_ai/get_pending_invoices
+    _type: haggl/get_pending_invoices
   open_browser:
-    _type: ingredient_ai/open_browser
+    _type: haggl/open_browser
   take_screenshot:
-    _type: ingredient_ai/take_screenshot
+    _type: haggl/take_screenshot
   click_element:
-    _type: ingredient_ai/click_element
+    _type: haggl/click_element
   type_text:
-    _type: ingredient_ai/type_text
+    _type: haggl/type_text
   inject_credentials:
-    _type: ingredient_ai/inject_credentials
+    _type: haggl/inject_credentials
   close_browser:
-    _type: ingredient_ai/close_browser
+    _type: haggl/close_browser
 
 llms:
   payment_llm:
@@ -1195,37 +1505,37 @@ workflow:
 functions:
   # Import all agent tools
   search_suppliers:
-    _type: ingredient_ai/search_suppliers
+    _type: haggl/search_suppliers
   extract_supplier_info:
-    _type: ingredient_ai/extract_supplier_info
+    _type: haggl/extract_supplier_info
   make_phone_call:
-    _type: ingredient_ai/make_phone_call
+    _type: haggl/make_phone_call
   get_call_transcript:
-    _type: ingredient_ai/get_call_transcript
+    _type: haggl/get_call_transcript
   parse_negotiation:
-    _type: ingredient_ai/parse_negotiation
+    _type: haggl/parse_negotiation
   get_all_suppliers:
-    _type: ingredient_ai/get_all_suppliers
+    _type: haggl/get_all_suppliers
   get_all_negotiations:
-    _type: ingredient_ai/get_all_negotiations
+    _type: haggl/get_all_negotiations
   save_decision:
-    _type: ingredient_ai/save_decision
+    _type: haggl/save_decision
   check_wallet_balance:
-    _type: ingredient_ai/check_wallet_balance
+    _type: haggl/check_wallet_balance
   x402_authorize:
-    _type: ingredient_ai/x402_authorize
+    _type: haggl/x402_authorize
   get_pending_invoices:
-    _type: ingredient_ai/get_pending_invoices
+    _type: haggl/get_pending_invoices
   open_browser:
-    _type: ingredient_ai/open_browser
+    _type: haggl/open_browser
   take_screenshot:
-    _type: ingredient_ai/take_screenshot
+    _type: haggl/take_screenshot
   click_element:
-    _type: ingredient_ai/click_element
+    _type: haggl/click_element
   inject_credentials:
-    _type: ingredient_ai/inject_credentials
+    _type: haggl/inject_credentials
   close_browser:
-    _type: ingredient_ai/close_browser
+    _type: haggl/close_browser
 
 llms:
   orchestrator_llm:
@@ -1257,7 +1567,7 @@ workflow:
   verbose: true
   max_iterations: 50
   system_prompt: |
-    You are the IngredientAI Orchestrator.
+    You are the Haggl Orchestrator.
 
     You coordinate a complete B2B procurement workflow with 4 phases:
 
@@ -1296,11 +1606,11 @@ import asyncio
 import argparse
 
 # Ensure tools are registered
-import src.ingredient_ai.register
+import src.haggl.register
 
 
 async def run_orchestrator(ingredients: list, location: str, budget: float):
-    """Run the full IngredientAI orchestration workflow."""
+    """Run the full Haggl orchestration workflow."""
     import subprocess
 
     # Build input prompt
@@ -1344,7 +1654,7 @@ Report progress and final results."""
 
 
 def main():
-    parser = argparse.ArgumentParser(description="IngredientAI Procurement System")
+    parser = argparse.ArgumentParser(description="Haggl Procurement System")
     parser.add_argument("--ingredients", nargs="+", required=True,
                         help="Ingredient names")
     parser.add_argument("--quantities", nargs="+", required=True,

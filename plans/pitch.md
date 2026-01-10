@@ -1,11 +1,11 @@
 # Pitch Script
-## IngredientAI - 3-Minute Presentation
+## Haggl - 3-Minute Presentation
 
 ---
 
 ## Opening Hook (15 seconds)
 
-> "Sarah runs Sweet Dreams Bakery. Every week, she spends 6 hours calling suppliers, comparing prices, and managing invoices. She knows she's overpaying, but who has time to negotiate when you're running a business?"
+> "Sarah runs Sweet Dreams Bakery. Every week, she spends 6 hours calling suppliers, comparing prices, and managing invoices. She knows she's overpaying, but who has time to negotiate when you're running a business? And when she needs to reorder flour, she's stuck digging through emails while frosting cakes."
 
 ---
 
@@ -25,7 +25,7 @@
 
 ## The Solution (30 seconds)
 
-> "We built IngredientAI - four AI agents that source, negotiate, and pay for business supplies autonomously.
+> "We built Haggl - four AI agents that source, negotiate, and pay for business supplies autonomously.
 >
 > **Agent 1** uses Exa.ai to search the web and find every potential supplier.
 >
@@ -35,7 +35,9 @@
 >
 > **Agent 4** processes invoices and executes payments through the **x402 protocol** - real on-chain transactions, fully autonomous.
 >
-> All four agents work **concurrently**. What took Sarah 6 hours now takes 3 minutes."
+> And here's the best part: Sarah can **text us to reorder**. 'Reorder flour' - that's it. We pull her last order, confirm the vendor, and she replies APPROVE. Done while frosting a cake.
+>
+> All four agents work **concurrently**. What took Sarah 6 hours now takes 3 minutes - or one text message."
 
 ---
 
@@ -81,7 +83,7 @@
 
 > "Most AI demos can either search, OR chat, OR mock a payment.
 >
-> IngredientAI does something no one else has shown:
+> Haggl does something no one else has shown:
 >
 > **Real phone negotiations** - AI calling real vendors, getting real discounts.
 >
@@ -93,7 +95,7 @@
 
 ## Closing (15 seconds)
 
-> "We built IngredientAI for Sarah - and for millions of small business owners drowning in procurement tasks.
+> "We built Haggl for Sarah - and for millions of small business owners drowning in procurement tasks.
 >
 > Four agents. Concurrent execution. Real negotiations. Real payments.
 >
@@ -111,6 +113,12 @@
 ### "Explain the x402 payment flow"
 > "x402 is an authorization layer. When the agent wants to pay an invoice, it first transfers USDC to our escrow wallet - that's the x402 signature. Once our backend verifies that on-chain payment, we execute the actual payment to the vendor via Stripe or ACH. The vendor receives normal payment - they never know x402 exists. This gives us a secure, auditable way for AI to spend money autonomously."
 
+### "How does SMS ordering work?"
+> "We use Twilio for SMS. Business owners text our number with commands like 'Reorder flour' or 'Order 500 lbs sugar'. Claude parses the intent and we look up their order history in MongoDB. For reorders, we auto-fill from their last purchase - same vendor, same quantity, same price. They just reply APPROVE and we handle the rest. No app download, works on any phone."
+
+### "Can they import bulk orders?"
+> "Yes, CSV upload. They export from QuickBooks, their inventory system, or even a Google Sheet. We auto-detect column mappings - ingredient, quantity, unit, quality. Upload once, we source everything. Great for the initial setup or weekly bulk orders."
+
 ### "What's the business model?"
 > "Three options we're exploring:
 > 1. Transaction fee (0.5-1% of order value)
@@ -125,7 +133,8 @@
 > 2. Evaluation scoring penalizes high prices
 > 3. Competitive quoting - agent mentions other suppliers' prices
 > 4. All decisions logged to MongoDB for audit
-> 5. x402 spend limits can be configured"
+> 5. x402 spend limits can be configured
+> 6. Large purchases require SMS approval before proceeding"
 
 ### "What's the total addressable market?"
 > "$2.3 trillion B2B procurement market globally. Even focusing just on small business ingredient sourcing, that's $180 billion. We're starting with food service - bakeries, restaurants, caterers - where ingredient quality matters and margins are tight."

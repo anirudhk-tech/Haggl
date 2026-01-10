@@ -1,8 +1,8 @@
 # Implementation Plan
-## IngredientAI - 8-Hour Hackathon Build
+## Haggl - 8-Hour Hackathon Build
 
-**Version:** 1.0
-**Date:** January 9, 2026
+**Version:** 2.0
+**Date:** January 10, 2026
 **Total Time:** 8 hours
 
 ---
@@ -12,11 +12,13 @@
 | Phase | Time | Duration | Deliverable |
 |-------|------|----------|-------------|
 | 1 | 0:00-1:00 | 1 hr | Setup & Infrastructure |
-| 2 | 1:00-2:30 | 1.5 hr | Sourcing Agent (Exa.ai) |
-| 3 | 2:30-4:30 | 2 hr | Negotiation Agent (Vapi) |
-| 4 | 4:30-5:30 | 1 hr | Evaluation Agent |
-| 5 | 5:30-7:00 | 1.5 hr | Payment Agent (x402) |
-| 6 | 7:00-8:00 | 1 hr | Integration & Demo Polish |
+| 2 | 1:00-2:00 | 1 hr | Sourcing Agent (Exa.ai) |
+| 3 | 2:00-3:30 | 1.5 hr | Negotiation Agent (Vapi) |
+| 4 | 3:30-4:15 | 45 min | Evaluation Agent |
+| 5 | 4:15-5:15 | 1 hr | Payment Agent (x402) |
+| **6** | **5:15-6:15** | **1 hr** | **SMS Bot & CSV Ingestion** |
+| 7 | 6:15-7:15 | 1 hr | Frontend Dashboard |
+| 8 | 7:15-8:00 | 45 min | Integration & Demo Polish |
 
 ---
 
@@ -34,20 +36,21 @@
 
 **Commands:**
 ```bash
-mkdir ingredient-ai && cd ingredient-ai
+mkdir haggl && cd haggl
 python -m venv venv
 source venv/bin/activate
 
-pip install pymongo anthropic exa-py vapi-python cdp-sdk fastapi uvicorn python-dotenv
+pip install pymongo anthropic exa-py vapi-python cdp-sdk fastapi uvicorn python-dotenv twilio playwright
 
 touch .env main.py requirements.txt
-mkdir agents api utils
+mkdir agents api utils sms ingestion frontend
+playwright install chromium
 ```
 
 **.env Configuration:**
 ```bash
 # MongoDB
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/ingredient_ai
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/haggl
 
 # Claude API
 ANTHROPIC_API_KEY=sk-ant-...
@@ -63,8 +66,18 @@ VAPI_ASSISTANT_ID=...
 CDP_API_KEY_NAME=...
 CDP_API_PRIVATE_KEY=...
 
+# Twilio (SMS)
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=+1...
+
 # Stripe (for actual payments)
 STRIPE_SECRET_KEY=sk_test_...
+
+# ACH Credentials
+ACH_ROUTING_NUMBER=...
+ACH_ACCOUNT_NUMBER=...
+ACH_ACCOUNT_NAME=...
 ```
 
 **Verification Script:**
@@ -239,7 +252,7 @@ db = MongoClient(os.getenv("MONGODB_URI"))["ingredient_ai"]
 
 # Vapi assistant configuration
 NEGOTIATION_ASSISTANT = {
-    "name": "IngredientAI Procurement Agent",
+    "name": "Haggl Procurement Agent",
     "model": {
         "provider": "anthropic",
         "model": "claude-sonnet-4-20250514",
@@ -967,7 +980,291 @@ def verify_x402_signature(signature: str, amount: float) -> bool:
 
 ---
 
-## Phase 6: Integration & Demo Polish (1 hour)
+## Phase 6: SMS Bot & CSV Ingestion (1 hour)
+
+### Hour 5:15-6:15
+
+**File:** `sms/handler.py`
+
+```python
+import os
+from twilio.rest import Client
+from twilio.twiml.messaging_response import MessagingResponse
+from anthropic import Anthropic
+from pymongo import MongoClient
+from datetime import datetime, timedelta
+
+twilio_client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+claude = Anthropic()
+db = MongoClient(os.getenv("MONGODB_URI"))["haggl"]
+
+
+async def parse_sms_intent(message: str) -> dict:
+    """Parse SMS intent using Claude"""
+
+    prompt = f"""Parse this SMS from a business owner ordering supplies.
+
+MESSAGE: {message}
+
+Return JSON:
+{{
+  "type": "reorder" | "new_order" | "approve" | "deny" | "status" | "help",
+  "ingredient": "string or null",
+  "items": [{{"name": "string", "quantity": "string"}}] or null,
+  "confidence": 0-1
+}}
+
+JSON:"""
+
+    response = claude.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=200,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    import json
+    return json.loads(response.content[0].text)
+
+
+async def handle_reorder(phone: str, ingredient: str) -> str:
+    """Handle reorder request"""
+
+    last_order = db.order_history.find_one(
+        {"phone": phone, "ingredient": {"$regex": ingredient, "$options": "i"}},
+        sort=[("timestamp", -1)]
+    )
+
+    if not last_order:
+        return f"No previous order for '{ingredient}'. Try: ORDER 500 lbs flour"
+
+    # Create pending approval
+    db.pending_approvals.insert_one({
+        "phone": phone,
+        "type": "reorder",
+        "order": last_order,
+        "expires_at": datetime.now() + timedelta(hours=24)
+    })
+
+    return f"Reorder {last_order['quantity']} {last_order['ingredient']} from {last_order['vendor']} @ ${last_order['price']:.2f}? Reply APPROVE or DENY"
+
+
+async def handle_new_order(phone: str, items: list) -> str:
+    """Handle new order request"""
+
+    # Create pending order
+    db.pending_approvals.insert_one({
+        "phone": phone,
+        "type": "new_order",
+        "items": items,
+        "expires_at": datetime.now() + timedelta(hours=24)
+    })
+
+    items_str = ", ".join([f"{i['quantity']} {i['name']}" for i in items])
+    return f"New order: {items_str}. I'll find the best suppliers. Reply APPROVE to proceed or DENY to cancel."
+
+
+async def handle_approval(phone: str, approved: bool) -> str:
+    """Handle approval/denial"""
+
+    pending = db.pending_approvals.find_one_and_delete({"phone": phone})
+
+    if not pending:
+        return "No pending order. Text ORDER or REORDER to start."
+
+    if approved:
+        # Trigger procurement workflow
+        from orchestrator import process_order_async
+        await process_order_async(pending)
+        return f"✓ Approved! Processing order... You'll receive updates via SMS."
+    else:
+        return "✗ Order cancelled."
+
+
+async def get_order_status(phone: str) -> str:
+    """Get current order status"""
+
+    active_order = db.orders.find_one(
+        {"phone": phone, "status": {"$ne": "completed"}},
+        sort=[("timestamp", -1)]
+    )
+
+    if not active_order:
+        return "No active orders. Text ORDER to start a new order."
+
+    return f"Order #{active_order['_id']}: {active_order['status']}. {active_order.get('details', '')}"
+
+
+def send_sms(to: str, message: str):
+    """Send SMS via Twilio"""
+    twilio_client.messages.create(
+        body=message,
+        from_=os.getenv("TWILIO_PHONE_NUMBER"),
+        to=to
+    )
+```
+
+**File:** `api/sms_webhook.py`
+
+```python
+from fastapi import FastAPI, Form
+from twilio.twiml.messaging_response import MessagingResponse
+from sms.handler import parse_sms_intent, handle_reorder, handle_new_order, handle_approval, get_order_status
+
+app = FastAPI()
+
+
+@app.post("/sms/webhook")
+async def sms_webhook(From: str = Form(...), Body: str = Form(...)):
+    """Twilio SMS webhook endpoint"""
+
+    intent = await parse_sms_intent(Body)
+
+    if intent["type"] == "reorder":
+        result = await handle_reorder(From, intent.get("ingredient", ""))
+    elif intent["type"] == "new_order":
+        result = await handle_new_order(From, intent.get("items", []))
+    elif intent["type"] == "approve":
+        result = await handle_approval(From, approved=True)
+    elif intent["type"] == "deny":
+        result = await handle_approval(From, approved=False)
+    elif intent["type"] == "status":
+        result = await get_order_status(From)
+    else:
+        result = "Commands: ORDER [item], REORDER [item], APPROVE, DENY, STATUS, HELP"
+
+    response = MessagingResponse()
+    response.message(result)
+    return str(response)
+```
+
+**File:** `ingestion/csv_parser.py`
+
+```python
+import csv
+from io import StringIO
+from typing import List, Dict
+import re
+
+
+class CSVIngestionProcessor:
+    """Parse CSV files into structured ingredient lists"""
+
+    COLUMN_ALIASES = {
+        "item": "ingredient",
+        "product": "ingredient",
+        "name": "ingredient",
+        "qty": "quantity",
+        "amount": "quantity",
+        "grade": "quality",
+        "type": "quality"
+    }
+
+    def process_csv(self, csv_content: str) -> List[Dict]:
+        """Parse CSV and return ingredient list"""
+
+        # Detect dialect
+        try:
+            dialect = csv.Sniffer().sniff(csv_content[:1024])
+        except csv.Error:
+            dialect = csv.excel
+
+        reader = csv.DictReader(StringIO(csv_content), dialect=dialect)
+
+        # Normalize headers
+        if reader.fieldnames:
+            reader.fieldnames = [self._normalize_column(c) for c in reader.fieldnames]
+
+        ingredients = []
+        for row in reader:
+            ingredient = self._parse_row(row)
+            if ingredient:
+                ingredients.append(ingredient)
+
+        return ingredients
+
+    def _normalize_column(self, col: str) -> str:
+        col_lower = col.lower().strip()
+        return self.COLUMN_ALIASES.get(col_lower, col_lower)
+
+    def _parse_row(self, row: Dict) -> Dict:
+        if not row.get("ingredient"):
+            return None
+
+        quantity, unit = self._parse_quantity(row.get("quantity", "1"))
+
+        return {
+            "name": row["ingredient"].strip(),
+            "quantity": f"{quantity} {unit}",
+            "quality": row.get("quality", "standard").strip() if row.get("quality") else "standard",
+            "priority": row.get("priority", "medium").strip() if row.get("priority") else "medium"
+        }
+
+    def _parse_quantity(self, qty_str: str) -> tuple:
+        match = re.match(r'(\d+(?:\.\d+)?)\s*(\w+)?', str(qty_str).strip())
+        if match:
+            return float(match.group(1)), match.group(2) or "units"
+        return 1, "units"
+
+
+# API endpoint for CSV upload
+@app.post("/upload/csv")
+async def upload_csv(file: UploadFile):
+    """Upload CSV file with ingredients"""
+
+    content = await file.read()
+    csv_content = content.decode("utf-8")
+
+    processor = CSVIngestionProcessor()
+    ingredients = processor.process_csv(csv_content)
+
+    # Log import
+    db.csv_imports.insert_one({
+        "filename": file.filename,
+        "timestamp": datetime.now(),
+        "ingredients_count": len(ingredients),
+        "ingredients": ingredients
+    })
+
+    return {"status": "success", "ingredients": ingredients}
+```
+
+**Test SMS:**
+```bash
+# Simulate incoming SMS via curl
+curl -X POST http://localhost:8000/sms/webhook \
+  -d "From=+14155551234" \
+  -d "Body=Reorder flour"
+```
+
+**Test CSV:**
+```bash
+# Upload CSV
+curl -X POST http://localhost:8000/upload/csv \
+  -F "file=@ingredients.csv"
+```
+
+**Deliverable:** SMS bot working with reorder/approve/deny, CSV upload processing
+
+---
+
+## Phase 7: Frontend Dashboard (1 hour)
+
+### Hour 6:15-7:15
+
+See [frontend/dashboard-overview.md](../frontend/dashboard-overview.md) for detailed UI specifications.
+
+**Key Components:**
+- Order dashboard with real-time status
+- Ingredient list management (upload CSV, manual add)
+- SMS conversation history
+- Payment history with x402 transaction links
+- Supplier analytics
+
+**Deliverable:** Basic dashboard UI mockup and key components
+
+---
+
+## Phase 8: Integration & Demo Polish (45 min)
 
 ### Hour 7:00-8:00
 
@@ -987,14 +1284,14 @@ from agents.payment import process_all_invoices, PaymentAgent
 def print_header():
     print("""
     ╔══════════════════════════════════════════════════════════════╗
-    ║                      IngredientAI                            ║
+    ║                      Haggl                            ║
     ║         Autonomous B2B Procurement Platform                  ║
     ╚══════════════════════════════════════════════════════════════╝
     """)
 
 
 async def main():
-    parser = argparse.ArgumentParser(description="IngredientAI - Autonomous Procurement")
+    parser = argparse.ArgumentParser(description="Haggl - Autonomous Procurement")
     parser.add_argument("--ingredients", nargs="+", required=True, help="Ingredients to source")
     parser.add_argument("--quantities", nargs="+", required=True, help="Quantities for each ingredient")
     parser.add_argument("--budget", type=float, required=True, help="Total budget in USD")
@@ -1079,7 +1376,7 @@ async def main():
             print(f"  {p['vendor']}: {p['x402_explorer']}")
 
     print()
-    print("Thank you for using IngredientAI!")
+    print("Thank you for using Haggl!")
 
 
 if __name__ == "__main__":
@@ -1098,7 +1395,7 @@ python main.py \
 **Expected Output:**
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║                      IngredientAI                            ║
+║                      Haggl                            ║
 ║         Autonomous B2B Procurement Platform                  ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -1166,7 +1463,7 @@ Transactions:
   Bay Area Foods Co: https://basescan.org/tx/0x8f3e7b2a...
   Fresh Farm Eggs: https://basescan.org/tx/0x1a2b3c4d...
 
-Thank you for using IngredientAI!
+Thank you for using Haggl!
 ```
 
 ---
@@ -1186,11 +1483,16 @@ Thank you for using IngredientAI!
 - [ ] Real invoice processing with payment URLs
 - [ ] Quality scoring visible
 - [ ] Browser visible during demo (headless=False)
+- [ ] **SMS reorder flow working**
+- [ ] **SMS approval/deny flow working**
+- [ ] **CSV ingredient upload working**
 
 ### Nice to Have
-- [ ] Web UI
+- [ ] Web UI dashboard
 - [ ] Payment confirmation screenshot gallery
 - [ ] Analytics dashboard
+- [ ] **Preferred vendor auto-fill feature**
+- [ ] **SMS status updates during order processing**
 
 ---
 

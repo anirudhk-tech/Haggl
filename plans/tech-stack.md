@@ -1,8 +1,8 @@
 # Tech Stack
-## IngredientAI - Technical Dependencies
+## Haggl - Technical Dependencies
 
-**Version:** 1.0
-**Date:** January 9, 2026
+**Version:** 2.0
+**Date:** January 10, 2026
 
 ---
 
@@ -10,9 +10,9 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        INGREDIENTAI                             │
+│                           HAGGL                                  │
 ├─────────────────────────────────────────────────────────────────┤
-│  Frontend    │  CLI (Python argparse)                          │
+│  Frontend    │  Web Dashboard (React) + CLI                    │
 ├──────────────┼──────────────────────────────────────────────────┤
 │  Backend     │  Python 3.10+ / FastAPI                         │
 ├──────────────┼──────────────────────────────────────────────────┤
@@ -23,6 +23,8 @@
 │  Search      │  Exa.ai (Semantic)                              │
 ├──────────────┼──────────────────────────────────────────────────┤
 │  Voice       │  Vapi (TTS + Phone)                             │
+├──────────────┼──────────────────────────────────────────────────┤
+│  SMS         │  Twilio (Text ordering & approvals)             │
 ├──────────────┼──────────────────────────────────────────────────┤
 │  Payments    │  x402 + Computer Use (ACH Bridge)               │
 └─────────────────────────────────────────────────────────────────┘
@@ -46,6 +48,9 @@ exa-py>=1.0.0
 # Voice AI
 vapi-python>=0.1.0
 
+# SMS (Twilio)
+twilio>=8.0.0
+
 # Payments (x402 + Computer Use ACH Bridge)
 cdp-sdk>=0.0.5
 playwright>=1.40.0    # Browser automation for ACH payments
@@ -53,6 +58,7 @@ playwright>=1.40.0    # Browser automation for ACH payments
 # API Framework
 fastapi>=0.109.0
 uvicorn>=0.27.0
+python-multipart>=0.0.6  # For file uploads (CSV)
 
 # Utilities
 python-dotenv>=1.0.0
@@ -60,7 +66,7 @@ python-dotenv>=1.0.0
 
 ### Installation
 ```bash
-pip install pymongo anthropic exa-py vapi-python cdp-sdk playwright fastapi uvicorn python-dotenv
+pip install pymongo anthropic exa-py vapi-python twilio cdp-sdk playwright fastapi uvicorn python-multipart python-dotenv
 playwright install chromium  # Install browser for computer use
 ```
 
@@ -138,7 +144,53 @@ playwright install chromium  # Install browser for computer use
 
 ---
 
-### 5. x402 + Computer Use (ACH Bridge)
+### 5. Twilio (SMS)
+**Purpose:** SMS-based ordering and approvals
+
+**Why Twilio:**
+- Industry-standard SMS gateway
+- Webhook support for incoming messages
+- Programmable messaging
+- Global reach
+- No app required for users
+
+**Features Used:**
+- Inbound SMS webhooks
+- Outbound SMS for notifications
+- Message history
+
+**SMS Capabilities:**
+| Command | Action |
+|---------|--------|
+| `ORDER [items]` | Start new order |
+| `REORDER [item]` | Repeat previous order |
+| `APPROVE` | Approve pending purchase |
+| `DENY` | Reject pending purchase |
+| `STATUS` | Check order status |
+| `BUDGET` | Check remaining budget |
+
+**Integration:**
+```python
+from twilio.rest import Client
+from twilio.twiml.messaging_response import MessagingResponse
+
+client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
+
+# Send SMS
+client.messages.create(
+    body="✓ Order approved! Processing...",
+    from_="+1234567890",
+    to="+1987654321"
+)
+
+# Receive SMS (webhook response)
+response = MessagingResponse()
+response.message("Order received!")
+```
+
+---
+
+### 6. x402 + Computer Use (ACH Bridge)
 **Purpose:** Autonomous payment authorization + execution via browser
 
 **Why x402 + Computer Use:**
@@ -247,6 +299,11 @@ EXA_API_KEY=...
 
 # Vapi
 VAPI_API_KEY=...
+
+# Twilio (SMS)
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=+1...
 
 # Coinbase CDP (or use JSON file)
 CDP_API_KEY_FILE=cdp_api_key.json

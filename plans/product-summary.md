@@ -1,5 +1,5 @@
 # Product Summary
-## IngredientAI - One-Page Overview
+## Haggl - One-Page Overview
 
 **Tagline:** AI agents that source, negotiate, and pay for your business supplies autonomously
 
@@ -7,7 +7,12 @@
 
 ## What It Is
 
-IngredientAI is a multi-agent AI system for B2B procurement. A business owner inputs their ingredient needs, quantities, and budget. Four specialized agents work **concurrently** to find suppliers, negotiate prices via real phone calls, evaluate options, and process payments using the x402 protocol.
+Haggl is a multi-agent AI system for B2B procurement. A business owner inputs their ingredient needs via **menu upload, CSV import, or SMS text**, sets their budget, and Haggl handles the rest. Four specialized agents work **concurrently** to find suppliers, negotiate prices via real phone calls, evaluate options, and process payments using the x402 protocol.
+
+**New in v2.0:**
+- **SMS Ordering** - Text to reorder, place new orders, or approve purchases
+- **CSV Import** - Bulk upload ingredients from any spreadsheet
+- **Preferred Vendor** - Auto-fill vendor from past orders
 
 ---
 
@@ -66,7 +71,7 @@ IngredientAI is a multi-agent AI system for B2B procurement. A business owner in
 - **ACH** = Legacy execution backend (works with ANY vendor)
 - **Result** = Bridging the future to the present
 
-Most AI demos can't negotiate OR pay. IngredientAI does BOTH:
+Most AI demos can't negotiate OR pay. Haggl does BOTH:
 - **Real phone calls** via Vapi TTS
 - **x402 authorization** — cryptographic spending limits for agents
 - **Legacy execution** via Computer Use (browser ACH)
@@ -82,15 +87,17 @@ Most AI demos can't negotiate OR pay. IngredientAI does BOTH:
 | AI/LLM | Claude API (vision) |
 | Web Search | Exa.ai |
 | Voice AI | Vapi |
+| **SMS** | **Twilio** |
 | Payments | x402 + Computer Use |
 | Browser | Playwright |
 
-**Dependencies:** 9 packages
+**Dependencies:** 11 packages
 
 ---
 
 ## Demo Flow (3 minutes)
 
+### Option A: CLI Demo
 ```bash
 $ python main.py --ingredients flour eggs butter --budget 2000
 
@@ -124,6 +131,31 @@ ORDER COMPLETE!
 Authorization: x402 (cryptographic)
 Execution: ACH (legacy rails)
 Savings: $550 (27%)
+```
+
+### Option B: SMS Demo
+```
+📱 Owner texts: "Reorder flour"
+
+📱 Haggl responds: "Reorder 500 lbs all-purpose flour from Bay Area Foods @ $0.425/lb ($212.50)? Reply APPROVE or DENY"
+
+📱 Owner texts: "APPROVE"
+
+📱 Haggl responds: "✓ Order placed! x402 TX: 0x8f3e... ETA: Jan 12"
+```
+
+### Option C: CSV Import Demo
+```bash
+$ curl -X POST http://localhost:8000/upload/csv -F "file=@ingredients.csv"
+
+{
+  "status": "success",
+  "ingredients": [
+    {"name": "flour", "quantity": "500 lbs"},
+    {"name": "eggs", "quantity": "1000 units"}
+  ],
+  "message": "2 ingredients imported. Starting sourcing..."
+}
 ```
 
 ---
