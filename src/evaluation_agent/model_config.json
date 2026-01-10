@@ -1,0 +1,7 @@
+{
+  "model_id": "voyage-lite-02-instruct",
+  "fine_tuned": true,
+  "method": "contrastive_preference_learning",
+  "training_examples": 1000,
+  "created_at": "2026-01-10T12:32:04.422225"
+}

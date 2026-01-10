@@ -1,7 +1,12 @@
 """
 Haggl Agent Server
 
-Main FastAPI server that exposes all agents as HTTP endpoints.
+Main FastAPI server that exposes all agents as HTTP endpoints:
+- Calling Agent: Voice calls via Vapi
+- Message Agent: SMS via Vonage  
+- Sourcing Agent: Vendor discovery via Exa.ai
+- Evaluation Agent: Vendor scoring via Voyage AI
+- Payment Agent: x402 authorization + payment execution
 """
 
 import os
@@ -12,7 +17,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 # Calling Agent imports
@@ -28,6 +33,35 @@ from calling_agent.schemas import (
 from message_agent import get_message_agent
 from message_agent.schemas import IncomingSMS
 
+# Sourcing Agent imports
+from sourcing_agent import get_sourcing_agent, SourcingRequest, SourcingResponse
+from sourcing_agent.schemas import IngredientRequest, UserLocation
+from sourcing_agent.tools.storage import get_vendors_by_ingredient, clear_storage
+
+# Evaluation Agent imports
+from evaluation_agent import get_evaluation_agent
+from evaluation_agent.schemas import (
+    EvaluationParameter,
+    FeedbackDirection,
+    FeedbackRequest,
+    EvaluationRequest,
+    EvaluationResponse,
+    PreferenceWeights,
+)
+
+# x402 / Payment Agent imports
+from x402 import (
+    get_authorizer,
+    get_vault,
+    get_escrow_manager,
+    AuthorizationRequest,
+    AuthorizationResponse,
+    Invoice,
+)
+from payment_agent import get_executor
+from payment_agent.schemas import PaymentMethod, PaymentRequest, PaymentResult, PaymentStatus
+from payment_agent.browserbase import BrowserbaseClient, PaymentPortalAutomator, InvoiceParser
+
 # Load environment variables
 load_dotenv()
 
@@ -42,15 +76,16 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    logger.info("Starting Haggl Agent server...")
+    logger.info("🚀 Starting Haggl Agent server...")
+    logger.info("   Agents: calling, message, sourcing, evaluation, payment")
     yield
     logger.info("Shutting down Haggl Agent server...")
 
 
 app = FastAPI(
     title="Haggl Agent Server",
-    description="Multi-agent server for voice calling and SMS messaging",
-    version="0.1.0",
+    description="Multi-agent B2B procurement platform",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -107,8 +142,14 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "Haggl Agent Server",
-        "version": "0.1.0",
-        "agents": ["calling_agent", "message_agent"],
+        "version": "0.3.0",
+        "agents": [
+            "calling_agent",
+            "message_agent", 
+            "sourcing_agent",
+            "evaluation_agent",
+            "payment_agent",
+        ],
     }
 
 
@@ -213,50 +254,55 @@ async def reset_calling_agent():
 
 
 # =============================================================================
-# Message Agent Routes (Vonage SMS)
+# Message Agent Routes (Vonage WhatsApp/SMS)
 # =============================================================================
 
 @app.post("/webhooks/vonage/inbound")
-async def vonage_inbound_webhook(request: Request):
+async def vonage_whatsapp_inbound(request: Request):
     """
-    Vonage inbound SMS webhook endpoint.
+    Vonage Messages API inbound webhook for WhatsApp/SMS.
     
-    Receives incoming SMS messages, processes them with the message agent,
-    and sends a response via Vonage API.
+    Receives incoming WhatsApp/SMS messages, processes them with the message agent,
+    and sends a response via Vonage Messages API.
     
-    Configure this URL in your Vonage dashboard:
+    Configure this URL in your Vonage Application settings:
     https://your-domain.com/webhooks/vonage/inbound
-    
-    Vonage sends JSON with fields:
-    - msisdn: sender phone number
-    - to: your Vonage number
-    - text: message content
-    - messageId: unique message ID
     """
     try:
         data = await request.json()
     except Exception:
-        # Vonage may also send form data in some configurations
-        form = await request.form()
-        data = dict(form)
+        return JSONResponse(content={"status": "error"}, status_code=400)
     
-    # Extract fields from Vonage webhook
-    from_number = data.get("msisdn") or data.get("from")
+    logger.info(f"Vonage webhook received: {data}")
+    
+    # Extract fields from Messages API webhook
+    # Format: {"from": "15633965540", "to": "12193674151", "message": {"content": {"type": "text", "text": "..."}}}
+    from_number = data.get("from") or data.get("msisdn")
     to_number = data.get("to")
-    body = data.get("text") or data.get("body", "")
-    message_id = data.get("messageId") or data.get("message-id")
+    
+    # Get message content - Messages API nests it
+    message_data = data.get("message", {})
+    content = message_data.get("content", {})
+    body = content.get("text", "")
+    
+    # Also check for direct text field (varies by webhook format)
+    if not body:
+        body = data.get("text", "") or data.get("body", "")
+    
+    message_id = data.get("message_uuid") or data.get("messageId") or data.get("message-id")
+    channel = data.get("channel", "whatsapp")
     
     if not from_number or not body:
-        logger.warning(f"Invalid Vonage webhook data: {data}")
-        return JSONResponse(content={"status": "error", "message": "Missing required fields"}, status_code=400)
+        logger.warning(f"Invalid webhook data: {data}")
+        return JSONResponse(content={"status": "ok"})  # Return 200 to avoid retries
     
-    # Add + prefix if not present (Vonage sends numbers without +)
+    # Add + prefix if not present
     if not from_number.startswith("+"):
         from_number = f"+{from_number}"
     if to_number and not to_number.startswith("+"):
         to_number = f"+{to_number}"
     
-    logger.info(f"Received SMS from {from_number}: {body[:50]}...")
+    logger.info(f"Received {channel} from {from_number}: {body[:50]}...")
     
     # Build incoming message
     incoming = IncomingSMS(
@@ -271,26 +317,25 @@ async def vonage_inbound_webhook(request: Request):
     
     try:
         response_text = await message_agent.process_message(incoming)
+        logger.info(f"Agent response: {response_text}")
         
-        # Send response via Vonage
-        await message_agent.send_response(from_number, response_text)
+        # Send response
+        send_result = await message_agent.send_response(from_number, response_text)
+        logger.info(f"Send result: {send_result}")
         
-        # Return 200 OK to acknowledge receipt
+        if send_result.get("error"):
+            logger.error(f"Failed to send message: {send_result['error']}")
+        
         return JSONResponse(content={"status": "ok"})
         
     except Exception as e:
-        logger.exception(f"Error processing SMS: {e}")
-        return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
+        logger.exception(f"Error processing message: {e}")
+        return JSONResponse(content={"status": "ok"})  # Return 200 to avoid retries
 
 
 @app.post("/webhooks/vonage/status")
 async def vonage_status_webhook(request: Request):
-    """
-    Vonage delivery receipt webhook.
-    
-    Receives delivery status updates for sent messages.
-    Configure this URL in your Vonage dashboard for delivery receipts.
-    """
+    """Vonage delivery receipt webhook."""
     try:
         data = await request.json()
     except Exception:
@@ -299,10 +344,7 @@ async def vonage_status_webhook(request: Request):
     
     message_id = data.get("messageId") or data.get("message-id")
     status = data.get("status")
-    
     logger.info(f"Vonage delivery status: {message_id} -> {status}")
-    
-    # Could store/update message status here if needed
     return JSONResponse(content={"status": "ok"})
 
 
@@ -321,35 +363,390 @@ async def get_message_history(phone_number: str):
         "messages": [
             {"role": msg.role.value, "content": msg.content, "timestamp": msg.timestamp}
             for msg in conversation.messages
-            if msg.role.value != "system"  # Don't expose system prompt
+            if msg.role.value != "system"
         ],
     }
 
 
-@app.post("/messaging/reset/{phone_number}")
-async def reset_conversation(phone_number: str):
-    """Reset conversation history for a phone number."""
-    message_agent = get_message_agent()
-    cleared = message_agent.clear_conversation(phone_number)
+# =============================================================================
+# Sourcing Agent Routes
+# =============================================================================
+
+class SourcingRequestModel(BaseModel):
+    """Request to source vendors for ingredients."""
+    ingredients: list[dict] = Field(description="List of ingredients to source")
+    location: dict = Field(description="User location (city, state, zip)")
+    max_results_per_ingredient: int = Field(default=10)
+
+
+@app.post("/sourcing/search", response_model=SourcingResponse)
+async def search_vendors(request: SourcingRequestModel):
+    """
+    Search for vendors for given ingredients.
     
-    if cleared:
-        return {"status": "reset", "message": f"Conversation cleared for {phone_number}"}
-    return {"status": "not_found", "message": f"No conversation found for {phone_number}"}
+    Uses Exa.ai for semantic search and Claude for data extraction.
+    """
+    logger.info(f"Sourcing request for {len(request.ingredients)} ingredients")
+    
+    # Convert to internal schema
+    ingredients = [
+        IngredientRequest(
+            name=ing.get("name", ""),
+            quantity=ing.get("quantity", 0),
+            unit=ing.get("unit", ""),
+            quality=ing.get("quality"),
+        )
+        for ing in request.ingredients
+    ]
+    
+    location = UserLocation(
+        city=request.location.get("city", ""),
+        state=request.location.get("state", ""),
+        zip_code=request.location.get("zip_code", ""),
+    )
+    
+    sourcing_request = SourcingRequest(
+        ingredients=ingredients,
+        location=location,
+        max_results_per_ingredient=request.max_results_per_ingredient,
+    )
+    
+    agent = get_sourcing_agent()
+    return await agent.source_vendors(sourcing_request)
 
 
-@app.post("/messaging/reset")
-async def reset_all_conversations():
-    """Reset all conversation histories (for testing)."""
-    message_agent = get_message_agent()
-    message_agent.clear_all_conversations()
-    return {"status": "reset", "message": "All conversations cleared"}
+@app.get("/sourcing/vendors/{ingredient}")
+async def get_vendors(ingredient: str):
+    """Get cached vendors for an ingredient."""
+    vendors = get_vendors_by_ingredient(ingredient)
+    return {"ingredient": ingredient, "vendors": vendors, "count": len(vendors)}
+
+
+@app.post("/sourcing/reset")
+async def reset_sourcing():
+    """Clear all cached vendor data."""
+    clear_storage()
+    return {"status": "reset", "message": "Vendor storage cleared"}
+
+
+# =============================================================================
+# Evaluation Agent Routes
+# =============================================================================
+
+class FeedbackRequestModel(BaseModel):
+    """Feedback request from UI."""
+    business_id: str
+    parameter: str  # quality, affordability, shipping, reliability
+    direction: str  # up, down
+
+
+@app.post("/evaluation/evaluate", response_model=EvaluationResponse)
+async def evaluate_vendors(request: EvaluationRequest):
+    """
+    Evaluate and rank vendors using Voyage AI embeddings.
+    
+    Returns vendors sorted by personalized scores.
+    """
+    logger.info(f"Evaluation request for {len(request.vendors)} vendors")
+    agent = get_evaluation_agent()
+    return agent.evaluate_vendors(request)
+
+
+@app.post("/evaluation/feedback")
+async def submit_feedback(request: FeedbackRequestModel):
+    """
+    Submit preference feedback (UP/DOWN) for a parameter.
+    
+    Updates the business's preference weights.
+    """
+    agent = get_evaluation_agent()
+    
+    feedback = FeedbackRequest(
+        parameter=EvaluationParameter(request.parameter),
+        direction=FeedbackDirection(request.direction),
+    )
+    
+    new_weights = agent.process_feedback(request.business_id, feedback)
+    return {"status": "updated", "weights": new_weights.model_dump()}
+
+
+@app.get("/evaluation/preferences/{business_id}")
+async def get_preferences(business_id: str):
+    """Get current preference weights for a business."""
+    agent = get_evaluation_agent()
+    prefs = agent.get_preferences(business_id)
+    return {
+        "business_id": business_id,
+        "weights": prefs.weights.model_dump(),
+        "feedback_count": prefs.total_feedback_count,
+    }
+
+
+# =============================================================================
+# x402 Payment Agent Routes
+# =============================================================================
+
+class AuthorizeRequest(BaseModel):
+    """Request to authorize a payment."""
+    invoice_id: str = Field(description="Unique invoice ID")
+    vendor_name: str = Field(description="Vendor name")
+    vendor_id: Optional[str] = Field(default=None, description="Vendor ID")
+    amount_usd: float = Field(description="Amount in USD")
+    budget_total: float = Field(description="Total budget for this session")
+    budget_remaining: float = Field(description="Remaining budget")
+    description: Optional[str] = Field(default=None, description="Invoice description")
+
+
+class PayRequestModel(BaseModel):
+    """Request to execute an authorized payment."""
+    auth_token: str = Field(description="x402 authorization token")
+    invoice_id: str = Field(description="Invoice ID to pay")
+    amount_usd: float = Field(description="Amount in USD")
+    vendor_name: str = Field(description="Vendor receiving payment")
+    payment_method: str = Field(default="mock_card", description="Payment method")
+
+
+class StoreCredentialsRequest(BaseModel):
+    """Request to store ACH credentials."""
+    business_id: str
+    routing_number: str
+    account_number: str
+    account_name: str
+    bank_name: Optional[str] = None
+
+
+class EscrowReleaseRequest(BaseModel):
+    """Request to release escrow to vendor."""
+    auth_token: str
+    vendor_id: str
+    ach_confirmation: Optional[str] = None
+
+
+class PayInvoiceRequest(BaseModel):
+    """Request to pay invoice via browser automation."""
+    invoice_url: str
+    business_id: str
+    auth_token: str
+    contact_email: str = "orders@haggl.demo"
+
+
+@app.post("/x402/authorize", response_model=AuthorizationResponse)
+async def authorize_payment(request: AuthorizeRequest):
+    """Authorize a payment via x402 (USDC to escrow)."""
+    logger.info(f"📋 Authorization request for invoice {request.invoice_id}")
+    
+    invoice = Invoice(
+        invoice_id=request.invoice_id,
+        vendor_name=request.vendor_name,
+        vendor_id=request.vendor_id,
+        amount_usd=request.amount_usd,
+        description=request.description
+    )
+    
+    auth_request = AuthorizationRequest(
+        invoice=invoice,
+        budget_total=request.budget_total,
+        budget_remaining=request.budget_remaining
+    )
+    
+    authorizer = get_authorizer()
+    return await authorizer.authorize(auth_request)
+
+
+@app.post("/x402/pay", response_model=PaymentResult)
+async def execute_payment(request: PayRequestModel):
+    """Execute an authorized payment."""
+    logger.info(f"💳 Payment execution request for invoice {request.invoice_id}")
+    
+    authorizer = get_authorizer()
+    invoice_id = authorizer.consume_auth_token(request.auth_token)
+    
+    if invoice_id is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired authorization token")
+    
+    if invoice_id != request.invoice_id:
+        raise HTTPException(status_code=400, detail=f"Auth token is for invoice {invoice_id}, not {request.invoice_id}")
+    
+    # Get original authorization tx_hash
+    x402_tx_hash = None
+    for auth in authorizer._authorizations.values():
+        if auth.invoice_id == invoice_id:
+            x402_tx_hash = auth.tx_hash
+            break
+    
+    executor = get_executor()
+    payment_request = PaymentRequest(
+        auth_token=request.auth_token,
+        invoice_id=request.invoice_id,
+        amount_usd=request.amount_usd,
+        vendor_name=request.vendor_name,
+        payment_method=PaymentMethod(request.payment_method)
+    )
+    
+    return await executor.execute_payment(payment_request, x402_tx_hash=x402_tx_hash)
+
+
+@app.get("/x402/status/{invoice_id}")
+async def get_payment_status(invoice_id: str):
+    """Get the status of a payment by invoice ID."""
+    authorizer = get_authorizer()
+    executor = get_executor()
+    
+    auth = None
+    for a in authorizer._authorizations.values():
+        if a.invoice_id == invoice_id:
+            auth = a
+            break
+    
+    payment = executor.get_payment_status(invoice_id)
+    
+    if not auth and not payment:
+        raise HTTPException(status_code=404, detail=f"No authorization or payment found for invoice {invoice_id}")
+    
+    return {
+        "invoice_id": invoice_id,
+        "authorization": auth.model_dump() if auth else None,
+        "payment": payment.model_dump() if payment else None
+    }
+
+
+@app.get("/x402/spending")
+async def get_spending_summary():
+    """Get current spending summary and limits."""
+    authorizer = get_authorizer()
+    return authorizer.get_spending_summary()
+
+
+@app.get("/x402/wallet")
+async def get_wallet_info():
+    """Get wallet information."""
+    from x402.wallet import get_wallet
+    wallet = get_wallet()
+    balance = await wallet.get_balance()
+    info = await wallet.get_or_create_account()
+    
+    return {
+        "address": info.address,
+        "network": info.network,
+        "balance": balance,
+        "mode": "mock" if wallet.mock_mode else "real"
+    }
+
+
+@app.post("/x402/reset")
+async def reset_x402_state():
+    """Reset all x402 state (for testing/demos)."""
+    authorizer = get_authorizer()
+    executor = get_executor()
+    authorizer.reset()
+    executor.reset()
+    return {"status": "reset", "message": "x402 state cleared"}
+
+
+# Credential Vault Endpoints
+@app.post("/vault/credentials")
+async def store_credentials(request: StoreCredentialsRequest):
+    """Store encrypted ACH credentials for a business."""
+    vault = get_vault()
+    return vault.store_credentials(
+        business_id=request.business_id,
+        routing_number=request.routing_number,
+        account_number=request.account_number,
+        account_name=request.account_name,
+        bank_name=request.bank_name
+    )
+
+
+@app.get("/vault/credentials/{business_id}")
+async def get_credential_info(business_id: str):
+    """Get non-sensitive credential info (masked account numbers)."""
+    vault = get_vault()
+    info = vault.get_credential_info(business_id)
+    if not info:
+        raise HTTPException(status_code=404, detail=f"No credentials found for business {business_id}")
+    return info
+
+
+# Escrow Endpoints
+@app.post("/escrow/release")
+async def release_escrow(request: EscrowReleaseRequest):
+    """Release escrowed funds to vendor after successful payment."""
+    authorizer = get_authorizer()
+    result = authorizer.release_escrow(
+        auth_token=request.auth_token,
+        vendor_id=request.vendor_id,
+        ach_confirmation=request.ach_confirmation
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to release escrow"))
+    return result
+
+
+@app.get("/escrow/stats")
+async def get_escrow_stats():
+    """Get escrow statistics."""
+    authorizer = get_authorizer()
+    return authorizer.get_escrow_stats()
+
+
+# Browser Automation Endpoints
+@app.post("/browser/pay-invoice")
+async def pay_invoice_via_browser(request: PayInvoiceRequest):
+    """Pay an invoice through browser automation."""
+    logger.info(f"🌐 Browser payment request for {request.invoice_url}")
+    
+    browser = BrowserbaseClient(mock_mode=False)
+    automator = PaymentPortalAutomator(browser)
+    
+    result = await automator.pay_invoice(
+        invoice_url=request.invoice_url,
+        business_id=request.business_id,
+        auth_token=request.auth_token,
+        contact_email=request.contact_email
+    )
+    
+    # If successful, release escrow
+    if result.get("status") == "succeeded":
+        authorizer = get_authorizer()
+        escrow_result = authorizer.release_escrow(
+            auth_token=request.auth_token,
+            vendor_id=result.get("parsed_invoice", {}).get("vendor_name", "unknown"),
+            ach_confirmation=result.get("confirmation")
+        )
+        result["escrow_released"] = escrow_result.get("success", False)
+    
+    return result
+
+
+@app.post("/browser/parse-invoice")
+async def parse_invoice_from_url(invoice_url: str):
+    """Navigate to an invoice URL and parse its details."""
+    browser = BrowserbaseClient(mock_mode=False)
+    parser = InvoiceParser()
+    
+    try:
+        session = await browser.create_session()
+        if session.get("error"):
+            raise HTTPException(status_code=500, detail=session["error"])
+        
+        await browser.connect_browser()
+        await browser.navigate(invoice_url)
+        
+        screenshot = await browser.screenshot()
+        if screenshot:
+            parsed = await parser.parse_from_screenshot(screenshot)
+            return {"url": invoice_url, "parsed": parsed}
+        
+        return {"url": invoice_url, "error": "Could not capture screenshot"}
+    finally:
+        await browser.close()
 
 
 # =============================================================================
 # Server Entry Point
 # =============================================================================
 
-def start_server(host: str = "0.0.0.0", port: int = 8001):
+def start_server(host: str = "0.0.0.0", port: int = 8000):
     """Start the FastAPI server."""
     import uvicorn
     uvicorn.run(app, host=host, port=port)
