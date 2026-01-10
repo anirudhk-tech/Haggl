@@ -19,11 +19,18 @@ from .schemas import (
 )
 from .tools import (
     send_sms,
-    place_order_with_updates,
+    place_orders_parallel,
     PLACE_ORDER_FUNCTION,
     source_vendors,
     SOURCE_VENDORS_FUNCTION,
 )
+
+# Storage imports
+try:
+    from storage.conversations import append_message, update_context
+    STORAGE_ENABLED = True
+except ImportError:
+    STORAGE_ENABLED = False
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +42,17 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 SYSTEM_PROMPT = """You are Haggl, an AI assistant that helps Acme Bakery order ingredients from local vendors.
 
 WORKFLOW:
-1. When user mentions a product they need, use source_vendors to find suppliers
-2. Present the vendor options to the user
-3. When user confirms which vendor to call, use place_order to call them
+1. When user mentions a product they need, ask for quantity if not provided
+2. Once you have product and quantity, use source_vendors to find suppliers
+3. IMMEDIATELY after sourcing, call place_order to call ALL vendors in parallel - don't ask which one
 
 EXAMPLE:
 User: "I need eggs"
 You: "How many dozen?"
 User: "20 dozen"
-You: *calls source_vendors* "Found 3 vendors! 1) Farm Fresh ($4/dz) 2) Local Eggs Co ($3.50/dz) 3) Happy Hens ($5/dz). Which one should I call?"
-User: "Call the second one"
-You: *calls place_order* "Calling Local Eggs Co now for 20 dozen eggs. I'll update you!"
+You: *calls source_vendors* → *immediately calls place_order* "Found 3 vendors! Calling all of them now to get you the best price. I'll update you as calls complete!"
+
+IMPORTANT: After sourcing vendors, ALWAYS immediately call place_order. Never ask the user which vendor to call - we call all 3 in parallel to negotiate the best deal.
 
 Keep messages SHORT - this is SMS/WhatsApp. Be friendly and efficient.
 """
@@ -111,6 +118,13 @@ class MessageAgent:
             )
         )
         
+        # Save to MongoDB
+        if STORAGE_ENABLED:
+            try:
+                append_message(incoming.from_number, "user", incoming.body)
+            except Exception as e:
+                logger.warning(f"Failed to save message to MongoDB: {e}")
+        
         # Generate response using OpenAI
         response_text = await self._generate_response(conversation)
         
@@ -122,6 +136,13 @@ class MessageAgent:
                 timestamp=datetime.utcnow().isoformat(),
             )
         )
+        
+        # Save assistant response to MongoDB
+        if STORAGE_ENABLED:
+            try:
+                append_message(incoming.from_number, "assistant", response_text)
+            except Exception as e:
+                logger.warning(f"Failed to save assistant message to MongoDB: {e}")
         
         return response_text
     
@@ -166,49 +187,55 @@ class MessageAgent:
                 logger.info(f"OpenAI wants to call: {function_name}({function_args})")
                 
                 if function_name == "source_vendors":
+                    import asyncio
+                    
                     # Search for vendors
+                    product = function_args.get("product", "eggs")
+                    quantity = function_args.get("quantity", 10)
+                    unit = function_args.get("unit", "dozen")
+                    
                     result = await source_vendors(
-                        product=function_args.get("product", "eggs"),
-                        quantity=function_args.get("quantity", 10),
-                        unit=function_args.get("unit", "dozen"),
+                        product=product,
+                        quantity=quantity,
+                        unit=unit,
                         quality=function_args.get("quality"),
                     )
                     
                     logger.info(f"Sourcing result: {result}")
                     
-                    # Store vendors in conversation for later reference
-                    conversation.context["last_vendors"] = result.get("vendors", [])
-                    conversation.context["last_product"] = function_args.get("product")
-                    conversation.context["last_quantity"] = function_args.get("quantity", 10)
-                    conversation.context["last_unit"] = function_args.get("unit", "dozen")
+                    vendors = result.get("vendors", [])
                     
-                    # Add function call and result to messages for context
-                    messages.append({
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "id": tool_call.id,
-                                "type": "function",
-                                "function": {
-                                    "name": function_name,
-                                    "arguments": tool_call.function.arguments,
-                                }
-                            }
-                        ]
-                    })
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": json.dumps(result),
-                    })
+                    if not vendors:
+                        return f"Sorry, I couldn't find any vendors for {product}. Try a different product?"
                     
-                    # Get response from OpenAI with vendor results
-                    final_response = client.chat.completions.create(
-                        model=OPENAI_MODEL,
-                        messages=messages,
+                    # Store in context
+                    conversation.context["last_vendors"] = vendors
+                    conversation.context["last_product"] = product
+                    conversation.context["last_quantity"] = quantity
+                    conversation.context["last_unit"] = unit
+                    
+                    # Create callback to send status updates via WhatsApp
+                    async def send_status_update(message: str):
+                        await self.send_response(conversation.phone_number, message)
+                    
+                    # IMMEDIATELY call all vendors in parallel - don't ask user
+                    vendor_names = [v.get("name", "Unknown") for v in vendors[:3]]
+                    logger.info(f"Auto-triggering parallel calls to: {vendor_names}")
+                    
+                    asyncio.create_task(
+                        place_orders_parallel(
+                            product=product,
+                            quantity=quantity,
+                            unit=unit,
+                            business_name="Acme Bakery",
+                            vendors=vendors,
+                            phone_number=conversation.phone_number,
+                            on_status_update=send_status_update,
+                        )
                     )
-                    return final_response.choices[0].message.content
+                    
+                    # Return immediate response
+                    return f"Found {len(vendors)} vendors: {', '.join(vendor_names)}. Calling all of them now to get you the best price!"
                 
                 elif function_name == "place_order":
                     import asyncio
@@ -217,23 +244,32 @@ class MessageAgent:
                     async def send_status_update(message: str):
                         await self.send_response(conversation.phone_number, message)
                     
-                    # Start the order in background - don't wait for completion
+                    # Get product/quantity from args or context (from sourcing step)
+                    product = function_args.get("product") or conversation.context.get("last_product", "eggs")
+                    quantity = function_args.get("quantity") or conversation.context.get("last_quantity", 10)
+                    unit = function_args.get("unit") or conversation.context.get("last_unit", "dozen")
+                    
+                    # Get vendors from context (top 3 from sourcing)
+                    vendors = conversation.context.get("last_vendors", [])[:3]
+                    
+                    logger.info(f"Placing parallel order: {quantity} {unit} of {product}")
+                    logger.info(f"Using {len(vendors)} vendors from context" if vendors else "Using default test vendors")
+                    
+                    # Start parallel calls in background - don't wait for completion
                     asyncio.create_task(
-                        place_order_with_updates(
-                            product=function_args.get("product", "eggs"),
-                            quantity=function_args.get("quantity", 1),
-                            unit=function_args.get("unit", "dozen"),
-                            business_name="Customer Business",
-                            vendor_phone=conversation.phone_number,  # Call user's number for testing
+                        place_orders_parallel(
+                            product=product,
+                            quantity=quantity,
+                            unit=unit,
+                            business_name="Acme Bakery",
+                            vendors=vendors if vendors else None,
+                            phone_number=conversation.phone_number,
                             on_status_update=send_status_update,
                         )
                     )
                     
-                    # Return immediate acknowledgment - status updates come via callback
-                    product = function_args.get("product", "eggs")
-                    quantity = function_args.get("quantity", 1)
-                    unit = function_args.get("unit", "dozen")
-                    return f"On it! Placing order for {quantity} {unit} of {product}. I'll send you updates as the call progresses."
+                    # Return immediate acknowledgment
+                    return f"On it! Calling 3 vendors in parallel for {quantity} {unit} of {product}. I'll update you as calls complete!"
             
             # No function call, return regular response
             return assistant_message.content or ""

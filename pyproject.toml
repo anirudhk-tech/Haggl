@@ -50,6 +50,7 @@ packages = [
     "src/message_agent",
     "src/sourcing_agent",
     "src/evaluation_agent",
+    "src/storage",
     "src/x402",
     "src/payment_agent",
 ]

@@ -11,10 +11,21 @@ from sourcing_agent import (
     UserLocation,
 )
 
+# Storage imports
+try:
+    from storage.vendors import save_sourced_vendors
+    STORAGE_ENABLED = True
+except ImportError:
+    STORAGE_ENABLED = False
+
 logger = logging.getLogger(__name__)
 
-# Hardcoded test phone number for all vendors
-TEST_VENDOR_PHONE = "+15633965540"
+# Hardcoded test phone numbers for vendors [0], [1], [2]
+TEST_VENDOR_PHONES = [
+    "+15633965540",  # Vendor 0
+    "+17203154946",  # Vendor 1
+    "+15128508061",  # Vendor 2
+]
 
 # Default location for sourcing
 DEFAULT_LOCATION = UserLocation(
@@ -67,23 +78,64 @@ async def source_vendors(
         sourcing_agent = get_sourcing_agent()
         response = await sourcing_agent.source_vendors(request)
         
-        # Extract vendors and override phone numbers for testing
-        vendors = []
+        # Extract vendors - take top 3 and assign test phone numbers
+        all_vendors = []
         for result in response.results:
             for vendor in result.vendors:
-                vendors.append({
-                    "name": vendor.vendor_name,
-                    "phone": TEST_VENDOR_PHONE,  # Hardcoded for testing
-                    "original_phone": vendor.phone,
-                    "website": vendor.website,
-                    "address": vendor.address,
-                    "distance_miles": vendor.distance_miles,
-                    "price_per_unit": vendor.pricing.price_per_unit if vendor.pricing else None,
-                    "unit": vendor.pricing.unit if vendor.pricing else unit,
-                    "rating": vendor.reviews.rating if vendor.reviews else None,
-                })
+                all_vendors.append(vendor)
         
-        logger.info(f"Found {len(vendors)} vendors for {product}. Vendors: {[vendor['name'] for vendor in vendors]}")
+        # Take only top 3 vendors (indices 0-2)
+        top_vendors = all_vendors[:3]
+        
+        vendors = []
+        for i, vendor in enumerate(top_vendors):
+            # Calculate quality and reliability scores from available data
+            # Use rating as base for quality (scale from 0-5 to 0-100)
+            rating = vendor.reviews.rating if vendor.reviews else None
+            quality_score = (rating / 5.0 * 100) if rating else 75.0  # Default 75 if no rating
+            
+            # Reliability based on extraction confidence and review count
+            review_count = vendor.reviews.review_count if vendor.reviews else 0
+            confidence = vendor.extraction_confidence or 0.5
+            # More reviews + higher confidence = higher reliability
+            reliability_score = min(100, 50 + (review_count / 10) + (confidence * 30))
+            
+            vendors.append({
+                "name": vendor.vendor_name,
+                "phone": TEST_VENDOR_PHONES[i],  # Assign test phone based on index
+                "original_phone": vendor.phone,
+                "website": vendor.website,
+                "address": vendor.address,
+                "distance_miles": vendor.distance_miles or 50.0,
+                "price_per_unit": vendor.pricing.price_per_unit if vendor.pricing else None,
+                "unit": vendor.pricing.unit if vendor.pricing else unit,
+                "rating": rating,
+                # Evaluation-related fields
+                "quality_score": quality_score,
+                "reliability_score": reliability_score,
+                "certifications": vendor.certifications or [],
+                "vendor_id": f"vendor-{i+1}",
+            })
+        
+        logger.info(f"Sourced {len(all_vendors)} vendors, using top {len(vendors)} for {product}")
+        for v in vendors:
+            logger.info(f"  - {v['name']} ({v['phone']}) Q:{v['quality_score']:.0f} R:{v['reliability_score']:.0f}")
+        
+        # Save to MongoDB with evaluation data
+        if STORAGE_ENABLED and vendors:
+            try:
+                # Enrich vendor data for storage
+                vendors_for_storage = []
+                for v in vendors:
+                    vendors_for_storage.append({
+                        **v,
+                        "quality_score": v.get("quality_score", 75.0),
+                        "reliability_score": v.get("reliability_score", 75.0),
+                    })
+                saved = save_sourced_vendors(product, vendors_for_storage, source="exa")
+                logger.info(f"Saved {saved} vendors to MongoDB")
+            except Exception as e:
+                logger.warning(f"Failed to save vendors to MongoDB: {e}")
         
         return {
             "success": True,
