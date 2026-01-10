@@ -19,14 +19,6 @@ Haggl is a multi-agent B2B procurement system built for the MongoDB Agentic Orch
 
 ---
 
-## Dashboard
-
-<p align="center">
-  <img src="docs/dashboard-screenshot.png" alt="Haggl Dashboard" width="800"/>
-</p>
-
----
-
 ## User Flow
 
 ```
