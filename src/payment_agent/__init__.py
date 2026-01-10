@@ -1,4 +1,4 @@
-"""Payment Agent - Mock execution layer for demos."""
+"""Payment Agent - Execution layer for demos and production."""
 
 from .executor import PaymentExecutor, get_executor
 from .schemas import (
@@ -8,6 +8,11 @@ from .schemas import (
     PaymentStatus,
     MockStripePayment,
     MockACHPayment,
+)
+from .browserbase import (
+    BrowserbaseX402Client,
+    IntuitPaymentAutomator,
+    pay_intuit_invoice,
 )
 
 __all__ = [
@@ -19,4 +24,7 @@ __all__ = [
     "PaymentStatus",
     "MockStripePayment",
     "MockACHPayment",
+    "BrowserbaseX402Client",
+    "IntuitPaymentAutomator",
+    "pay_intuit_invoice",
 ]

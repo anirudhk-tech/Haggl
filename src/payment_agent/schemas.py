@@ -12,6 +12,7 @@ class PaymentMethod(str, Enum):
     STRIPE_ACH = "stripe_ach"
     MOCK_ACH = "mock_ach"
     MOCK_CARD = "mock_card"
+    BROWSERBASE_ACH = "browserbase_ach"  # Real browser automation via Browserbase x402
 
 
 class PaymentStatus(str, Enum):

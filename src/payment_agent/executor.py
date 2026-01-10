@@ -79,6 +79,8 @@ class PaymentExecutor:
                 result = await self._execute_stripe_card(request)
             elif request.payment_method in (PaymentMethod.MOCK_ACH, PaymentMethod.STRIPE_ACH):
                 result = await self._execute_ach(request)
+            elif request.payment_method == PaymentMethod.BROWSERBASE_ACH:
+                result = await self._execute_browserbase_ach(request)
             else:
                 result = PaymentResult(
                     invoice_id=request.invoice_id,
@@ -229,6 +231,72 @@ class PaymentExecutor:
             confirmation_number=confirmation,
             receipt_url=None  # ACH doesn't have instant receipts
         )
+    
+    async def _execute_browserbase_ach(self, request: PaymentRequest) -> PaymentResult:
+        """
+        Execute ACH payment via Browserbase x402 browser automation.
+        
+        This uses real cloud browsers (paid with USDC) to navigate
+        vendor payment portals like Intuit QuickBooks.
+        """
+        from .browserbase import pay_intuit_invoice
+        
+        logger.info("🌐 Executing via Browserbase x402...")
+        
+        # For demo, use mock mode if no Browserbase credentials
+        mock_mode = not os.getenv("BROWSERBASE_PROJECT_ID")
+        
+        # Get the payment URL (would come from invoice in production)
+        payment_url = getattr(request, 'payment_url', None)
+        
+        if not payment_url:
+            # For demo without URL, fall back to mock ACH
+            logger.info("No payment URL provided, using mock ACH flow")
+            return await self._execute_ach(request)
+        
+        try:
+            result = await pay_intuit_invoice(
+                invoice_url=payment_url,
+                auth_token=request.auth_token,
+                mock_mode=mock_mode
+            )
+            
+            if result["status"] == "succeeded":
+                return PaymentResult(
+                    invoice_id=request.invoice_id,
+                    status=PaymentStatus.SUCCEEDED,
+                    payment_method=PaymentMethod.BROWSERBASE_ACH,
+                    amount_usd=request.amount_usd,
+                    confirmation_number=result.get("confirmation"),
+                    ach_payment=MockACHPayment(
+                        ach_transfer_id=result.get("confirmation", "BB_TRANSFER"),
+                        routing_number_last4=self._mock_ach["routing"][-4:],
+                        account_number_last4=self._mock_ach["account"][-4:],
+                        bank_name="Via Browserbase",
+                        status="succeeded",
+                        estimated_arrival="Instant"
+                    )
+                )
+            else:
+                return PaymentResult(
+                    invoice_id=request.invoice_id,
+                    status=PaymentStatus.FAILED,
+                    payment_method=PaymentMethod.BROWSERBASE_ACH,
+                    amount_usd=request.amount_usd,
+                    error=result.get("error", "Browserbase execution failed"),
+                    retry_eligible=True
+                )
+                
+        except Exception as e:
+            logger.exception(f"Browserbase execution error: {e}")
+            return PaymentResult(
+                invoice_id=request.invoice_id,
+                status=PaymentStatus.FAILED,
+                payment_method=PaymentMethod.BROWSERBASE_ACH,
+                amount_usd=request.amount_usd,
+                error=str(e),
+                retry_eligible=True
+            )
     
     def get_payment_status(self, invoice_id: str) -> Optional[PaymentResult]:
         """Get the status of a payment by invoice ID."""
