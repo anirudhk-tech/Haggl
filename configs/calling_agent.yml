@@ -1,0 +1,103 @@
+# IngredientAI Calling Agent Configuration
+# Phase 2: NeMo Agent Toolkit orchestrated vendor calling
+
+# Note: For Phase 2, we use a simplified approach that doesn't require
+# full NAT registration. The agent logic is handled in the FastAPI server.
+# This config is for reference and future NAT integration.
+
+agent:
+  name: "IngredientAI Calling Agent"
+  description: "Orchestrates vendor phone calls for egg procurement"
+  version: "0.1.0"
+
+# State machine for the agent
+states:
+  - ready_to_call
+  - call_in_progress
+  - processing
+  - confirmed
+  - placed
+  - failed
+
+# Transitions
+transitions:
+  ready_to_call:
+    - call_in_progress
+    - failed
+  call_in_progress:
+    - processing
+    - failed
+  processing:
+    - confirmed
+    - failed
+  confirmed:
+    - placed
+  placed: []  # Terminal state
+  failed: []  # Terminal state
+
+# Tools available to the agent
+tools:
+  call_vendor:
+    description: "Make an outbound phone call to a vendor via Vapi"
+    inputs:
+      - phone_number: "Vendor phone number in E.164 format"
+      - vendor_name: "Name of the vendor"
+      - business_name: "Name of the ordering business"
+      - product: "Product being ordered"
+      - quantity: "Quantity needed"
+      - unit: "Unit of measurement"
+    outputs:
+      - call_id: "Vapi call ID"
+      - status: "Call status"
+      - error: "Error message if failed"
+
+  get_call_status:
+    description: "Get the status and transcript of a Vapi call"
+    inputs:
+      - call_id: "The Vapi call ID"
+    outputs:
+      - status: "Current call status"
+      - transcript: "Call transcript if available"
+      - ended_reason: "Reason the call ended"
+
+  parse_call_outcome:
+    description: "Parse call transcript to extract structured outcome"
+    inputs:
+      - transcript: "The call transcript"
+    outputs:
+      - confirmed: "Whether order was confirmed"
+      - price: "Negotiated price per unit"
+      - eta: "Estimated delivery/pickup time"
+
+# Agent prompt
+system_prompt: |
+  You are the IngredientAI Calling Agent. Your task is to orchestrate 
+  a phone call to a vendor to place an order for eggs.
+
+  WORKFLOW:
+  1. Call the vendor using the call_vendor tool
+  2. Wait for the call to complete
+  3. Parse the outcome from the transcript
+  4. Return structured results (confirmed, price, eta)
+
+  STATE MACHINE:
+  - Start in READY_TO_CALL
+  - Transition to CALL_IN_PROGRESS when call is initiated
+  - Transition to PROCESSING when call ends
+  - Transition to CONFIRMED if order was confirmed
+  - Transition to PLACED when complete
+  - Transition to FAILED if any step fails
+
+  GOALS:
+  - Confirm availability of eggs
+  - Get the price per dozen
+  - Get estimated delivery/pickup time
+  - Return structured outcome
+
+  Be efficient and handle errors gracefully.
+
+# Guardrails
+guardrails:
+  max_call_duration_seconds: 300
+  max_retries: 1
+  idempotency: true  # Don't double-call on refresh
