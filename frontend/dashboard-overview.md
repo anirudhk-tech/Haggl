@@ -244,7 +244,198 @@ db.order_history.findOne(
 
 ---
 
-### 7. Vendor Management
+### 7. Vendor Evaluation with Preference Learning
+
+**Purpose:** Each vendor displays an interactive radar chart with 4 evaluation parameters. Business owners can click UP/DOWN on each parameter to train the evaluation model on their preferences. Over time, the model learns what matters most to the business and curates vendor selection accordingly.
+
+**How It Works:**
+1. Each vendor shows a radar chart with 4 dimensions: Quality, Affordability, Shipping, Reliability
+2. Each axis has UP (▲) and DOWN (▼) buttons that act as **loss function inputs**
+3. Clicking adjusts preference weights: UP increases importance, DOWN decreases it
+4. The Voyage AI model learns these preferences through contrastive learning
+5. Future vendor searches are automatically curated based on learned preferences
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  VENDOR EVALUATION                                           [X] Close      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ BAY AREA FLOUR MILLS                              Score: 94.2 / 100     ││
+│  │ Premium organic flour supplier                    Rank: #1 of 12        ││
+│  ├─────────────────────────────────────────────────────────────────────────┤│
+│  │                                                                          ││
+│  │                        QUALITY                                           ││
+│  │                       [▲] 94 [▼]                                         ││
+│  │                           ╱╲                                             ││
+│  │                          ╱  ╲                                            ││
+│  │                         ╱    ╲                                           ││
+│  │                        ╱  ████╲                                          ││
+│  │                       ╱  ██████╲                                         ││
+│  │    RELIABILITY       ╱  ████████╲       AFFORDABILITY                    ││
+│  │      [▲] 97 [▼]  ───█████████████───     [▲] 72 [▼]                      ││
+│  │                       ╲████████╱                                         ││
+│  │                        ╲██████╱                                          ││
+│  │                         ╲████╱                                           ││
+│  │                          ╲██╱                                            ││
+│  │                           ╲╱                                             ││
+│  │                       [▲] 85 [▼]                                         ││
+│  │                        SHIPPING                                          ││
+│  │                      (15 mi away)                                        ││
+│  │                                                                          ││
+│  │  ┌─────────────────────────────────────────────────────────────────────┐││
+│  │  │ YOUR CURRENT PREFERENCES              [Reset to Default]            │││
+│  │  │ Quality: ████████░░ 35%    Affordability: ██████░░░░ 25%           │││
+│  │  │ Shipping: ████░░░░░░ 15%   Reliability:   ██████████ 25%           │││
+│  │  │                                                                     │││
+│  │  │ 📈 Model trained on 47 feedback signals                            │││
+│  │  └─────────────────────────────────────────────────────────────────────┘││
+│  │                                                                          ││
+│  │  [Select Vendor]                          [Compare with Others]         ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ ARTISAN GRAIN CO                                  Score: 91.8 / 100     ││
+│  │ Specialty bread flour supplier                    Rank: #2 of 12        ││
+│  ├─────────────────────────────────────────────────────────────────────────┤│
+│  │                                                                          ││
+│  │                        QUALITY                                           ││
+│  │                       [▲] 96 [▼]                                         ││
+│  │                           ╱╲                                             ││
+│  │                          ╱██╲                                            ││
+│  │                         ╱████╲                                           ││
+│  │    RELIABILITY         ╱██████╲         AFFORDABILITY                    ││
+│  │      [▲] 94 [▼]    ───████████───        [▲] 68 [▼]                      ││
+│  │                        ╲██████╱                                          ││
+│  │                         ╲████╱                                           ││
+│  │                          ╲██╱                                            ││
+│  │                           ╲╱                                             ││
+│  │                       [▲] 78 [▼]                                         ││
+│  │                        SHIPPING                                          ││
+│  │                      (28 mi away)                                        ││
+│  │                                                                          ││
+│  │  [Select Vendor]                          [Compare with Others]         ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Preference Learning Flow:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    PREFERENCE LEARNING SYSTEM                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   USER ACTION                    SYSTEM RESPONSE                            │
+│   ───────────                    ───────────────                            │
+│                                                                              │
+│   Click [▲] Quality      →    Weight: 25% → 30%                             │
+│                               Other weights redistribute                     │
+│                               Model re-ranks vendors                         │
+│                                                                              │
+│   Click [▼] Affordability →   Weight: 25% → 20%                             │
+│                               Quality-focused vendors rise                   │
+│                               Budget vendors drop in ranking                 │
+│                                                                              │
+│   Over 50+ interactions   →   Model learns: "This bakery prioritizes        │
+│                               quality and reliability over price"            │
+│                               Future searches auto-curated                   │
+│                                                                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   LEARNING RATE: 5% per click (configurable)                                │
+│   MIN WEIGHT: 5% (no parameter completely ignored)                          │
+│   MAX WEIGHT: 60% (no single parameter dominates)                           │
+│   NORMALIZATION: Weights always sum to 100%                                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Technical Implementation:**
+
+```typescript
+// Preference feedback handler
+interface FeedbackRequest {
+  businessId: string;
+  parameter: 'quality' | 'affordability' | 'shipping' | 'reliability';
+  direction: 'up' | 'down';
+}
+
+// API call when user clicks UP/DOWN
+async function submitFeedback(feedback: FeedbackRequest): Promise<PreferenceWeights> {
+  const response = await fetch('/evaluation/feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(feedback)
+  });
+  return response.json();
+}
+
+// Evaluate vendors with learned preferences
+async function evaluateVendors(businessId: string, budget: number): Promise<VendorRanking[]> {
+  const response = await fetch('/evaluation/vendors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ business_id: businessId, budget })
+  });
+  return response.json();
+}
+
+// Radar chart component (Recharts)
+const VendorRadarChart = ({ vendor, onFeedback }) => (
+  <div className="vendor-card">
+    <RadarChart data={[
+      { param: 'Quality', value: vendor.scores.quality, fullMark: 100 },
+      { param: 'Affordability', value: vendor.scores.affordability, fullMark: 100 },
+      { param: 'Shipping', value: vendor.scores.shipping, fullMark: 100 },
+      { param: 'Reliability', value: vendor.scores.reliability, fullMark: 100 },
+    ]}>
+      <PolarGrid />
+      <PolarAngleAxis dataKey="param" />
+      <Radar dataKey="value" fill="#2563EB" fillOpacity={0.6} />
+    </RadarChart>
+
+    {['quality', 'affordability', 'shipping', 'reliability'].map(param => (
+      <div key={param} className="feedback-buttons">
+        <span>{param}: {vendor.scores[param]}</span>
+        <button onClick={() => onFeedback(param, 'up')}>▲</button>
+        <button onClick={() => onFeedback(param, 'down')}>▼</button>
+      </div>
+    ))}
+  </div>
+);
+```
+
+**API Endpoints:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/evaluation/vendors` | POST | Evaluate & rank vendors by preferences |
+| `/evaluation/feedback` | POST | Submit UP/DOWN feedback (loss function) |
+| `/evaluation/preferences/{business_id}` | GET | Get current preference weights |
+| `/evaluation/radar/{business_id}/{vendor_id}` | GET | Get radar chart data for vendor |
+| `/evaluation/reset/{business_id}` | POST | Reset preferences to defaults |
+
+**Model Learning Details:**
+
+The evaluation agent uses **Voyage AI embeddings** with contrastive preference learning:
+
+1. **Training Data:** 200+ preference triplets (query, positive_vendor, negative_vendor)
+2. **Focus Areas:** 40% quality-focused, 40% reliability-focused, 20% mixed
+3. **Preference Vectors:** Learned direction vectors for each parameter
+4. **Scoring:** Cosine similarity between vendor embedding and preference vectors
+5. **Final Score:** `0.3 * embedding_score + 0.7 * weighted_parameter_score`
+
+Over time, as the business owner clicks UP/DOWN:
+- Weights adjust incrementally (learning rate: 5%)
+- Vendor rankings automatically re-sort
+- The model "understands" what the business values most
+- Future vendor searches are pre-filtered to match preferences
+
+---
+
+### 8. Vendor Relationships
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -410,14 +601,41 @@ Key principles:
 1. Order dashboard (main view)
 2. New order form with preferred vendor
 3. CSV import
+4. **Vendor Evaluation with Radar Charts** (preference learning UI)
 
 ### Phase 2 (Post-Hackathon)
 1. Payment history with x402 links
 2. SMS conversation view
 3. Vendor management
 4. Analytics dashboard
+5. Advanced preference analytics (trend graphs, learning curves)
+
+---
+
+## Key Differentiator: Preference Learning
+
+The **Vendor Evaluation with Preference Learning** feature is Haggl's core differentiator:
+
+- **Traditional procurement:** Static filters, manual comparison
+- **Haggl:** AI learns your preferences over time, curates vendors automatically
+
+```
+Week 1: Business owner clicks [▲] Quality 12 times, [▼] Price 8 times
+        → Model learns: "Quality matters more than price for this bakery"
+
+Week 2: Vendor search for "flour"
+        → Results auto-sorted: Premium suppliers first, budget options lower
+        → No manual filtering needed
+
+Week 4: New vendor onboarded
+        → Automatically scored against learned preferences
+        → Business owner sees "87% match to your preferences"
+```
+
+This creates a **personalized procurement experience** that improves with every interaction.
 
 ---
 
 **Document Status:** Ready for Implementation
-**Framework Recommendation:** React + TailwindCSS + Shadcn/UI
+**Framework Recommendation:** React + TailwindCSS + Shadcn/UI + Recharts (for radar charts)
+**Backend API:** FastAPI with Voyage AI embeddings (already implemented)
