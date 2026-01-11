@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { ChevronDown } from 'lucide-react';
 
@@ -20,13 +21,15 @@ export function NavBar() {
     <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 h-16">
       <div className="max-w-[1440px] mx-auto px-16 h-full flex items-center justify-between">
         {/* Logo */}
-        <Link href="/orders" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-brand rounded-lg flex items-center justify-center">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 6L10 2L18 6M2 6L10 10L18 6M2 6V14L10 18L18 14V6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-          <span className="text-xl font-semibold text-gray-900">Haggl</span>
+        <Link href="/orders" className="flex items-center">
+          <Image 
+            src="/logo.png" 
+            alt="Haggl" 
+            width={180} 
+            height={56} 
+            className="h-14 w-auto"
+            priority
+          />
         </Link>
         
         {/* Nav Links */}

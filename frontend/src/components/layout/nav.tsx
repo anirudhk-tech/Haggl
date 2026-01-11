@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -32,9 +33,16 @@ export function DesktopNav() {
   return (
     <nav className="hidden md:flex flex-col w-56 border-r border-border bg-background h-screen fixed left-0 top-0">
       {/* Logo */}
-      <div className="px-6 py-5 border-b border-border">
-        <Link href="/" className="text-xl font-medium tracking-tight">
-          Haggl
+      <div className="px-6 py-5 border-b border-border flex items-center">
+        <Link href="/">
+          <Image 
+            src="/logo.png" 
+            alt="Haggl" 
+            width={160} 
+            height={50} 
+            className="h-12 w-auto"
+            priority
+          />
         </Link>
         <Badge variant="outline" className="ml-2 text-[10px] uppercase tracking-wider border-border">
           Demo
@@ -128,8 +136,15 @@ export function MobileNav() {
 export function Header({ title }: { title?: string }) {
   return (
     <header className="md:hidden flex items-center justify-between px-5 py-4 border-b border-border bg-background sticky top-0 z-40">
-      <Link href="/" className="text-lg font-medium tracking-tight">
-        Haggl
+      <Link href="/">
+        <Image 
+          src="/logo.png" 
+          alt="Haggl" 
+          width={130} 
+          height={40} 
+          className="h-10 w-auto"
+          priority
+        />
       </Link>
       {title && (
         <span className="text-xs uppercase tracking-wider text-muted-foreground">
