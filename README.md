@@ -27,9 +27,7 @@
 
 ---
 
-
-https://github.com/user-attachments/assets/a415dbef-f484-48ff-ad22-61566113b92e
-
+https://github.com/user-attachments/assets/6fa015f1-aa30-4eee-96a0-e36e32d6c99b
 
 ## The Problem
 
