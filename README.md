@@ -117,14 +117,14 @@ flowchart TD
     F --> G
     G --> H
 
-    style USER fill:#e8f5e9,stroke:#4caf50
-    style MSG fill:#e3f2fd,stroke:#2196f3
-    style SRC fill:#fff3e0,stroke:#ff9800
-    style CALLS fill:#fce4ec,stroke:#e91e63
-    style EVAL fill:#f3e5f5,stroke:#9c27b0
-    style APPROVAL fill:#fff8e1,stroke:#ffc107
-    style PAY fill:#e8eaf6,stroke:#3f51b5
-    style H fill:#c8e6c9,stroke:#4caf50
+    style USER fill:#e8f5e9,stroke:#4caf50,color:#000
+    style MSG fill:#e3f2fd,stroke:#2196f3,color:#000
+    style SRC fill:#fff3e0,stroke:#ff9800,color:#000
+    style CALLS fill:#fce4ec,stroke:#e91e63,color:#000
+    style EVAL fill:#f3e5f5,stroke:#9c27b0,color:#000
+    style APPROVAL fill:#fff8e1,stroke:#ffc107,color:#000
+    style PAY fill:#e8eaf6,stroke:#3f51b5,color:#000
+    style H fill:#c8e6c9,stroke:#4caf50,color:#000
 ```
 
 ---

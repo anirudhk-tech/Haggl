@@ -211,12 +211,12 @@ flowchart TB
     Evaluation --> Payment
     Payment --> MongoDB
 
-    style Frontend fill:#e3f2fd,stroke:#1976d2
-    style Server fill:#fff3e0,stroke:#f57c00
-    style Agents fill:#f3e5f5,stroke:#7b1fa2
-    style Evaluation fill:#fce4ec,stroke:#c2185b
-    style Payment fill:#e8eaf6,stroke:#3f51b5
-    style MongoDB fill:#e8f5e9,stroke:#388e3c
+    style Frontend fill:#e3f2fd,stroke:#1976d2,color:#000
+    style Server fill:#fff3e0,stroke:#f57c00,color:#000
+    style Agents fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    style Evaluation fill:#fce4ec,stroke:#c2185b,color:#000
+    style Payment fill:#e8eaf6,stroke:#3f51b5,color:#000
+    style MongoDB fill:#e8f5e9,stroke:#388e3c,color:#000
 ```
 
 ### Agent Communication

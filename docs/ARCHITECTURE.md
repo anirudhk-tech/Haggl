@@ -51,10 +51,10 @@ flowchart TB
     API --> AGENTS
     AGENTS --> DATA
 
-    style CLIENT fill:#e3f2fd,stroke:#1976d2
-    style API fill:#fff3e0,stroke:#f57c00
-    style AGENTS fill:#f3e5f5,stroke:#7b1fa2
-    style DATA fill:#e8f5e9,stroke:#388e3c
+    style CLIENT fill:#e3f2fd,stroke:#1976d2,color:#000
+    style API fill:#fff3e0,stroke:#f57c00,color:#000
+    style AGENTS fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    style DATA fill:#e8f5e9,stroke:#388e3c,color:#000
 ```
 
 ## Agent Architecture
@@ -197,10 +197,10 @@ flowchart LR
     B -->|push| C["📡 SSE<br/>Stream"]
     C -->|recv| D["⚛️ Frontend<br/>React"]
 
-    style A fill:#f3e5f5,stroke:#7b1fa2
-    style B fill:#fff3e0,stroke:#f57c00
-    style C fill:#e3f2fd,stroke:#1976d2
-    style D fill:#e8f5e9,stroke:#388e3c
+    style A fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    style B fill:#fff3e0,stroke:#f57c00,color:#000
+    style C fill:#e3f2fd,stroke:#1976d2,color:#000
+    style D fill:#e8f5e9,stroke:#388e3c,color:#000
 ```
 
 ## Concurrency Model
@@ -248,9 +248,9 @@ flowchart LR
     A["🖥️ Client"] -->|JWT| B["⚡ Server<br/>Validate"]
     B -->|Query| C[("🍃 MongoDB")]
 
-    style A fill:#e3f2fd,stroke:#1976d2
-    style B fill:#fff3e0,stroke:#f57c00
-    style C fill:#e8f5e9,stroke:#388e3c
+    style A fill:#e3f2fd,stroke:#1976d2,color:#000
+    style B fill:#fff3e0,stroke:#f57c00,color:#000
+    style C fill:#e8f5e9,stroke:#388e3c,color:#000
 ```
 
 ### Webhook Verification
@@ -285,9 +285,9 @@ flowchart TB
     CF --> Frontend & Backend1 & Backend2
     Backend1 & Backend2 --> MongoDB
 
-    style CF fill:#fff3e0,stroke:#f57c00
-    style Compute fill:#e3f2fd,stroke:#1976d2
-    style MongoDB fill:#e8f5e9,stroke:#388e3c
+    style CF fill:#fff3e0,stroke:#f57c00,color:#000
+    style Compute fill:#e3f2fd,stroke:#1976d2,color:#000
+    style MongoDB fill:#e8f5e9,stroke:#388e3c,color:#000
 ```
 
 ### Environment Configuration
