@@ -133,11 +133,11 @@ flowchart TD
 
 | Agent | What It Does | Powered By |
 |-------|--------------|------------|
-| **Message Agent** | Conversational ordering via WhatsApp/SMS. Understands natural language requests. 
-| **Sourcing Agent** | Semantic search for wholesale suppliers. Extracts pricing, ratings, certifications.
-| **Calling Agent** | Real phone calls to negotiate bulk pricing. Natural voice conversations. 
-| **Evaluation Agent** | Scores vendors on price, quality, reliability. Learns your preferences. 
-| **Payment Agent** | Executes secure payments. Supports card, ACH, browser automation.
+| **Message Agent** | Conversational ordering via WhatsApp/SMS. Understands natural language requests. | WhatsApp API, Vonage |
+| **Sourcing Agent** | Semantic search for wholesale suppliers. Extracts pricing, ratings, certifications. | Eva.ai |
+| **Calling Agent** | Real phone calls to negotiate bulk pricing. Natural voice conversations. | Vapi, Vonage |
+| **Evaluation Agent** | Scores vendors on price, quality, reliability. Learns your preferences. | VoyageAI, MongoDB |
+| **Payment Agent** | Executes secure payments. Supports card, ACH, browser automation. | Coinbase, Stripe, BrowserBase |
 
 ---
 
