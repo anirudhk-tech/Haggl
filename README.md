@@ -27,6 +27,8 @@
 
 ---
 
+https://github.com/user-attachments/assets/e5b97100-0a22-4eda-83f8-4dc8f4515ecb
+
 ## The Problem
 
 Small business owners spend **8+ hours per week** on procurement—calling suppliers, comparing prices, chasing invoices. That's time stolen from customers, creativity, and growth.
