@@ -81,7 +81,7 @@ Then open [http://localhost:3000](http://localhost:3000) and complete onboarding
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                   SOURCING AGENT                                 │
-│    Finds local vendors using Exa.ai semantic search             │
+│    Finds local vendors using semantic search             │
 │    Ranks by distance, quality, reliability                      │
 └─────────────────────────────────────────────────────────────────┘
                               │
