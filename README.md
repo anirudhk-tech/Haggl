@@ -129,11 +129,11 @@ Then open [http://localhost:3000](http://localhost:3000) and complete onboarding
 
 | Agent | What It Does | Powered By |
 |-------|--------------|------------|
-| **Message Agent** | Conversational ordering via WhatsApp/SMS. Understands natural language requests. | OpenAI, Vonage |
-| **Sourcing Agent** | Semantic search for wholesale suppliers. Extracts pricing, ratings, certifications. | Exa.ai |
-| **Calling Agent** | Real phone calls to negotiate bulk pricing. Natural voice conversations. | Vapi |
-| **Evaluation Agent** | Scores vendors on price, quality, reliability. Learns your preferences. | Voyage AI |
-| **Payment Agent** | Executes secure payments. Supports card, ACH, browser automation. | Stripe, Browserbase |
+| **Message Agent** | Conversational ordering via WhatsApp/SMS. Understands natural language requests. 
+| **Sourcing Agent** | Semantic search for wholesale suppliers. Extracts pricing, ratings, certifications.
+| **Calling Agent** | Real phone calls to negotiate bulk pricing. Natural voice conversations. 
+| **Evaluation Agent** | Scores vendors on price, quality, reliability. Learns your preferences. 
+| **Payment Agent** | Executes secure payments. Supports card, ACH, browser automation.
 
 ---
 
