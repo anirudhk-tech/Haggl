@@ -14,8 +14,8 @@ Haggl is a multi-agent B2B procurement system built for the MongoDB Agentic Orch
 - Anirudh Kuppili
 - Karthik Reddy
 - Spencer Yang
+- Walter Richard
 
-**Problem Statement:** #4 - Agentic Payments and Negotiation
 
 ---
 
