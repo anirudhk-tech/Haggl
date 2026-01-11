@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Check, Loader2, Phone, Search, DollarSign, CreditCard, MessageSquare, MapPin, Star, X, FileText } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Phone, Search, DollarSign, CreditCard, MessageSquare, MapPin, Star, X, FileText, Wifi, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 
 type Phase = 'sourcing' | 'negotiating' | 'evaluating' | 'approval' | 'payment' | 'complete';
@@ -31,6 +31,19 @@ interface Vendor {
   final_score?: number;
 }
 
+// Map backend stages to frontend phases
+const stageToPhase: Record<string, Phase> = {
+  'idle': 'sourcing',
+  'sourcing': 'sourcing',
+  'calling': 'negotiating',
+  'negotiating': 'negotiating',
+  'evaluating': 'evaluating',
+  'approval_pending': 'approval',
+  'approved': 'payment',
+  'completed': 'complete',
+  'failed': 'complete',
+};
+
 export default function LiveOrderFlow({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [currentPhase, setCurrentPhase] = useState<Phase>('sourcing');
@@ -38,154 +51,119 @@ export default function LiveOrderFlow({ params }: { params: { id: string } }) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [bestVendor, setBestVendor] = useState<{ name: string; price: number; discount?: number } | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
-  // Mock live updates - in real app, this would come from WebSocket/SSE
+  // Connect to SSE stream
   useEffect(() => {
-    const phases: Phase[] = ['sourcing', 'negotiating', 'evaluating', 'approval', 'payment', 'complete'];
-    let phaseIndex = phases.indexOf(currentPhase);
-    let activityIndex = 0;
-    let vendorIndex = 0;
-
-    const mockVendors: Vendor[] = [
-      { 
-        id: '1', 
-        vendor_name: 'Bay Area Foods Co', 
-        location: 'San Francisco, CA', 
-        distance_miles: 12.5,
-        phone: '(415) 555-0123',
-        price_per_unit: 0.42,
-        unit: 'lb',
-        products: ['Flour', 'Sugar', 'Grains'],
-        final_score: 8.5,
-        status: 'found' 
-      },
-      { 
-        id: '2', 
-        vendor_name: 'Golden Gate Grains', 
-        location: 'Oakland, CA', 
-        distance_miles: 8.2,
-        phone: '(510) 555-0456',
-        price_per_unit: 0.38,
-        unit: 'lb',
-        products: ['Flour', 'Grains'],
-        final_score: 8.2,
-        status: 'found' 
-      },
-      { 
-        id: '3', 
-        vendor_name: 'Fresh Farms', 
-        location: 'Berkeley, CA', 
-        distance_miles: 5.8,
-        phone: '(510) 555-0789',
-        price_per_unit: 0.35,
-        unit: 'lb',
-        products: ['Flour', 'Butter', 'Dairy'],
-        final_score: 7.8,
-        status: 'found' 
-      },
-    ];
-
-    const phaseActivities = {
-      sourcing: [
-        { message: 'Searching for local vendors in your area...', type: 'info' as const },
-        { message: 'Found Bay Area Foods Co - San Francisco, CA', type: 'success' as const },
-        { message: 'Found Golden Gate Grains - Oakland, CA', type: 'success' as const },
-        { message: 'Found Fresh Farms - Berkeley, CA', type: 'success' as const },
-        { message: 'Found 12 vendors total', type: 'success' as const },
-      ],
-      negotiating: [
-        { message: 'Starting negotiations with top vendors...', type: 'info' as const },
-        { message: '📞 Calling Bay Area Foods Co...', type: 'info' as const },
-        { message: '✓ Bay Area Foods answered - negotiating...', type: 'success' as const },
-        { message: '✓ Bay Area Foods: 15% discount offered', type: 'success' as const },
-        { message: '📞 Calling Golden Gate Grains...', type: 'info' as const },
-        { message: '✓ Golden Gate Grains answered - negotiating...', type: 'success' as const },
-        { message: '✓ Golden Gate Grains: 12% discount offered', type: 'success' as const },
-        { message: '📞 Calling Fresh Farms...', type: 'info' as const },
-        { message: '✓ Fresh Farms answered - negotiating...', type: 'success' as const },
-        { message: '✓ Fresh Farms: 18% discount offered', type: 'success' as const },
-      ],
-      evaluating: [
-        { message: 'Evaluating all offers...', type: 'info' as const },
-        { message: 'Comparing prices, quality, and delivery terms...', type: 'info' as const },
-        { message: 'Best deal identified: Fresh Farms (18% discount)', type: 'success' as const },
-      ],
-      approval: [
-        { message: 'Preparing order summary for approval...', type: 'info' as const },
-        { message: 'Order ready: $842.50 (18% savings)', type: 'success' as const },
-      ],
-      payment: [
-        { message: 'Processing payment authorization...', type: 'info' as const },
-        { message: 'x402 authorization approved', type: 'success' as const },
-        { message: 'Submitting payment to vendor...', type: 'info' as const },
-        { message: 'Payment confirmed! Transaction: 0xA3F8...', type: 'success' as const },
-      ],
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+    
+    const connect = () => {
+      const eventSource = new EventSource(`${API_URL}/events/stream`);
+      eventSourceRef.current = eventSource;
+      
+      eventSource.onopen = () => {
+        setConnected(true);
+        console.log('SSE connected for order:', params.id);
+      };
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          // Map stage to phase
+          if (data.stage) {
+            const newPhase = stageToPhase[data.stage] || 'sourcing';
+            setCurrentPhase(newPhase);
+          }
+          
+          // Add activity
+          if (data.message) {
+            const activityType = 
+              data.level === 'error' ? 'error' :
+              data.level === 'warning' ? 'warning' :
+              data.type === 'stage_change' ? 'info' :
+              'success';
+            
+            setActivities(prev => [{
+              id: Date.now().toString(),
+              timestamp: new Date(data.timestamp),
+              message: data.message,
+              type: activityType,
+            }, ...prev.slice(0, 49)]);
+          }
+          
+          // Handle vendor updates from call_update events
+          if (data.type === 'call_update' && data.data) {
+            const callData = data.data;
+            setVendors(prev => {
+              const existing = prev.find(v => v.vendor_name === callData.vendor_name);
+              if (existing) {
+                return prev.map(v => 
+                  v.vendor_name === callData.vendor_name 
+                    ? { 
+                        ...v, 
+                        status: callData.status === 'initiated' ? 'calling' : 
+                               callData.status === 'completed' ? 'answered' : 
+                               callData.status === 'failed' ? 'declined' : v.status,
+                        price_per_unit: callData.price || v.price_per_unit,
+                      }
+                    : v
+                );
+              } else {
+                return [...prev, {
+                  id: callData.vendor_id || Date.now().toString(),
+                  vendor_name: callData.vendor_name,
+                  location: 'Nearby',
+                  status: 'calling',
+                }];
+              }
+            });
+          }
+          
+          // Handle sourcing results
+          if (data.stage === 'sourcing' && data.message?.includes('Found')) {
+            const match = data.message.match(/Found (\d+) vendors/);
+            if (match) {
+              // Vendors will be populated via call_update events
+            }
+          }
+          
+          // Handle approval pending - extract best vendor info
+          if (data.type === 'approval_required' && data.data) {
+            setBestVendor({
+              name: data.data.vendor_name,
+              price: data.data.price,
+            });
+          }
+          
+          // Handle completion
+          if (data.stage === 'completed' || data.type === 'order_approved') {
+            setTimeout(() => {
+              router.push('/orders');
+            }, 3000);
+          }
+          
+        } catch (e) {
+          console.error('Failed to parse SSE event:', e);
+        }
+      };
+      
+      eventSource.onerror = () => {
+        setConnected(false);
+        eventSource.close();
+        // Reconnect after delay
+        setTimeout(connect, 3000);
+      };
     };
-
-    const interval = setInterval(() => {
-      const currentActivities = phaseActivities[currentPhase];
-      
-      // Handle vendor updates during sourcing
-      if (currentPhase === 'sourcing' && vendorIndex < mockVendors.length) {
-        setVendors(prev => [...prev, mockVendors[vendorIndex]]);
-        vendorIndex++;
-      }
-      
-      // Handle vendor status updates during negotiation - all called simultaneously
-      if (currentPhase === 'negotiating') {
-        if (activityIndex === 1) {
-          // Start calling all vendors at once
-          setVendors(prev => prev.map(v => ({ ...v, status: 'calling' })));
-        } else if (activityIndex === 2) {
-          // Vendor 1 answers
-          setVendors(prev => prev.map(v => v.id === '1' ? { ...v, status: 'talking' } : v));
-        } else if (activityIndex === 3) {
-          // Vendor 1 negotiation complete
-          setVendors(prev => prev.map(v => v.id === '1' ? { ...v, status: 'answered', discount: 15, callDuration: '2:34', transcript: '[0:00] Agent: Hi, I\'m calling on behalf of Sweet Dreams Bakery...\n[0:12] Vendor: How can I help?\n[0:15] Agent: We need 500 lbs of flour monthly. What\'s your best bulk price?\n[0:45] Vendor: For that volume, I can offer 15% off our standard rate.\n[1:20] Agent: That works for us. What about delivery?\n[1:45] Vendor: We deliver within 3-5 business days.\n[2:10] Agent: Perfect. We\'ll be in touch. Thank you!' } : v));
-        } else if (activityIndex === 4) {
-          // Vendor 2 answers
-          setVendors(prev => prev.map(v => v.id === '2' ? { ...v, status: 'talking' } : v));
-        } else if (activityIndex === 5) {
-          // Vendor 2 goes to voicemail
-          setVendors(prev => prev.map(v => v.id === '2' ? { ...v, status: 'voicemail', callDuration: '0:15', transcript: '[0:00] Agent: (Voicemail) Hi, this is calling on behalf of Sweet Dreams Bakery. We\'re interested in bulk flour orders...' } : v));
-        } else if (activityIndex === 6) {
-          // Vendor 3 answers
-          setVendors(prev => prev.map(v => v.id === '3' ? { ...v, status: 'talking' } : v));
-        } else if (activityIndex === 7) {
-          // Vendor 3 negotiation complete
-          setVendors(prev => prev.map(v => v.id === '3' ? { ...v, status: 'answered', discount: 18, callDuration: '3:12', transcript: '[0:00] Agent: Hi, calling about flour supply for our bakery...\n[0:08] Vendor: Yes, how can I help?\n[0:20] Agent: We need 500 lbs monthly. What\'s your best bulk rate?\n[0:55] Vendor: For that volume, I can offer 18% discount off our list price.\n[1:30] Agent: Excellent! That\'s the best we\'ve heard. Can you deliver?\n[2:00] Vendor: Yes, we deliver within 2 days. Free delivery for orders over $500.\n[2:45] Agent: Perfect. We\'ll be in touch. Thank you!' } : v));
-        }
-      }
-      
-      if (currentActivities && activityIndex < currentActivities.length) {
-        const activity = currentActivities[activityIndex];
-        setActivities(prev => [...prev, {
-          id: Date.now().toString(),
-          timestamp: new Date(),
-          ...activity,
-        }]);
-        activityIndex++;
-      } else if (phaseIndex < phases.length - 1) {
-        // Move to next phase
-        phaseIndex++;
-        setCurrentPhase(phases[phaseIndex]);
-        activityIndex = 0;
-        
-        // Initialize vendors for negotiation phase
-        if (phases[phaseIndex] === 'negotiating' && vendors.length === 0) {
-          setVendors(mockVendors.slice(0, 3));
-        }
-      } else {
-        // Complete - redirect to orders after a moment
-        setTimeout(() => {
-          router.push('/orders');
-        }, 3000);
-        clearInterval(interval);
-      }
-    }, 2000); // Update every 2 seconds
-
-    return () => clearInterval(interval);
-  }, [currentPhase, vendors.length, router]);
+    
+    connect();
+    
+    return () => {
+      eventSourceRef.current?.close();
+    };
+  }, [params.id, router]);
 
   const getPhaseConfig = (phase: Phase) => {
     const configs = {
@@ -267,6 +245,23 @@ export default function LiveOrderFlow({ params }: { params: { id: string } }) {
                 <h1 className="text-lg font-semibold text-gray-900">{params.id}</h1>
                 <p className="text-xs text-gray-500">Live Order Flow</p>
               </div>
+            </div>
+            <div className={`flex items-center gap-2 ${connected ? 'text-brand' : 'text-gray-400'}`}>
+              {connected ? (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-brand"></span>
+                  </span>
+                  <Wifi size={16} />
+                  <span className="text-xs font-medium">Connected</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff size={16} />
+                  <span className="text-xs font-medium">Connecting...</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -495,32 +490,42 @@ export default function LiveOrderFlow({ params }: { params: { id: string } }) {
                     </span>
                   </div>
                   <h3 className="text-2xl font-semibold text-gray-900 mb-2">
-                    {vendors.find(v => v.discount === 18)?.vendor_name || 'Fresh Farms'}
+                    {bestVendor?.name || vendors.find(v => v.discount === 18)?.vendor_name || 'Best Vendor'}
                   </h3>
                   <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
                     <MapPin size={14} />
-                    <span>{vendors.find(v => v.discount === 18)?.location || 'Berkeley, CA'}</span>
-                    {vendors.find(v => v.discount === 18)?.distance_miles && (
+                    <span>{vendors.find(v => v.discount === 18)?.location || 'Nearby'}</span>
+                    {vendors.find(v => v.discount === 18)?.distance_miles != null && (
                       <>
                         <span>•</span>
-                        <span>{vendors.find(v => v.discount === 18)?.distance_miles.toFixed(1)} mi</span>
+                        <span>{(vendors.find(v => v.discount === 18)?.distance_miles ?? 0).toFixed(1)} mi</span>
                       </>
                     )}
                   </div>
-                  <p className="text-4xl font-bold text-brand mb-4">$842.50</p>
+                  <p className="text-4xl font-bold text-brand mb-4">
+                    ${bestVendor?.price?.toFixed(2) || '0.00'}
+                  </p>
                   <div className="flex items-center gap-4 text-sm text-gray-500 mb-6">
-                    <span>3 items</span>
+                    <span>Order #{params.id}</span>
                     <span>•</span>
                     <span>Delivery</span>
-                    <span>•</span>
-                    <span>Arrives Jan 12</span>
                   </div>
-                  <div className="inline-block bg-brand-light text-brand px-4 py-2 rounded-full text-sm font-medium mb-6">
-                    Saved $138 (18%)
-                  </div>
+                  {bestVendor?.discount && (
+                    <div className="inline-block bg-brand-light text-brand px-4 py-2 rounded-full text-sm font-medium mb-6">
+                      Saved {bestVendor.discount}%
+                    </div>
+                  )}
                   <div className="flex gap-4">
                     <button 
-                      onClick={() => setCurrentPhase('payment')}
+                      onClick={async () => {
+                        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+                        await fetch(`${API_URL}/orders/approve`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ order_id: params.id }),
+                        });
+                        setCurrentPhase('payment');
+                      }}
                       className="flex-1 bg-brand hover:bg-brand-dark text-white font-medium px-6 py-3 rounded-lg transition-colors"
                     >
                       Approve & Pay
@@ -595,7 +600,7 @@ export default function LiveOrderFlow({ params }: { params: { id: string } }) {
           <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div>
-                <h3 className="text-xl font-semibold text-gray-900">{selectedVendor.name}</h3>
+                <h3 className="text-xl font-semibold text-gray-900">{selectedVendor.vendor_name}</h3>
                 <p className="text-sm text-gray-500">{selectedVendor.location}</p>
               </div>
               <button

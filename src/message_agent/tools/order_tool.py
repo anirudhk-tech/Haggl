@@ -58,7 +58,7 @@ PRIMARY_TEST_PHONE = "+15633965540"
 TEST_VENDOR_PHONES = [
     "+15633965540",  # Vendor 1
     "+17203154946",  # Vendor 2
-    "+15128508061",  # Vendor 3
+    "+19707842824",  # Vendor 3
 ]
 
 # Fallback vendor names if sourcing returns nothing (unlikely)
@@ -78,6 +78,8 @@ async def call_single_vendor(
     order_id: str,
     vendor_metadata: Optional[dict] = None,
     on_status_update: Optional[StatusCallback] = None,
+    delivery_date: Optional[str] = None,
+    delivery_address: Optional[str] = None,
 ) -> dict:
     """
     Call a single vendor and track the call through completion.
@@ -92,6 +94,8 @@ async def call_single_vendor(
         order_id: Order ID for tracking
         vendor_metadata: Additional vendor data (quality_score, reliability_score, etc.)
         on_status_update: Optional callback for status updates
+        delivery_date: Requested delivery date (YYYY-MM-DD)
+        delivery_address: Delivery address for the order
     
     Returns dict with vendor info, call outcome, and metadata for evaluation.
     """
@@ -105,13 +109,20 @@ async def call_single_vendor(
                 logger.error(f"Failed to send status update: {e}")
     
     try:
+        # Build full delivery info with address and date
+        delivery_parts = []
+        if delivery_address:
+            delivery_parts.append(delivery_address)
+        if delivery_date:
+            delivery_parts.append(f"Needed by {delivery_date}")
+        delivery_info = " - ".join(delivery_parts) if delivery_parts else "To be confirmed"
+        
         call_input = CallVendorInput(
             phone_number=vendor.phone,
             vendor_name=vendor.name,
             business_name=business_name,
-            product=product,
-            quantity=quantity,
-            unit=unit,
+            items=[{"product": product, "quantity": quantity, "unit": unit}],
+            delivery_address=delivery_info,
         )
         
         logger.info(f"[Vendor {vendor_index + 1}] Calling {vendor.name} at {vendor.phone}")
@@ -278,6 +289,10 @@ async def place_orders_parallel(
     vendors: Optional[list[dict]] = None,
     phone_number: Optional[str] = None,
     on_status_update: Optional[StatusCallback] = None,
+    order_id: Optional[str] = None,
+    business_id: Optional[str] = None,
+    delivery_date: Optional[str] = None,
+    delivery_address: Optional[str] = None,
 ) -> dict:
     """
     Call up to 3 vendors in parallel, then evaluate to pick best vendor.
@@ -298,8 +313,9 @@ async def place_orders_parallel(
     Returns:
         dict with evaluation result including selected vendor
     """
-    # Generate order ID
-    order_id = f"order-{uuid.uuid4().hex[:8]}"
+    # Use provided order_id or generate one
+    if not order_id:
+        order_id = f"order-{uuid.uuid4().hex[:8]}"
     
     # Emit: Order created
     if EVENTS_ENABLED:
@@ -422,6 +438,8 @@ async def place_orders_parallel(
             order_id=order_id,
             vendor_metadata=vendor_metadata_list[i],
             on_status_update=None,  # Don't spam updates during calls
+            delivery_date=delivery_date,
+            delivery_address=delivery_address,
         )
         for i, vendor in enumerate(call_vendors)
     ]

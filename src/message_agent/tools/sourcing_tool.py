@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 TEST_VENDOR_PHONES = [
     "+15633965540",  # Vendor 0
     "+17203154946",  # Vendor 1
-    "+15128508061",  # Vendor 2
+    "+19707842824",  # Vendor 2
 ]
 
 # Default location for sourcing

@@ -19,6 +19,13 @@ export default function NewOrder() {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [isCreating, setIsCreating] = useState(false);
+  const [deliveryDate, setDeliveryDate] = useState<string>(() => {
+    // Default to 3 days from now
+    const date = new Date();
+    date.setDate(date.getDate() + 3);
+    return date.toISOString().split('T')[0];
+  });
+  const [deliveryAddress, setDeliveryAddress] = useState<string>('');
 
   // Check if onboarding is complete
   useEffect(() => {
@@ -59,12 +66,42 @@ export default function NewOrder() {
 
     setIsCreating(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Create order and redirect to live flow
-    const orderId = `ORD-${Date.now().toString().slice(-6)}`;
-    router.push(`/orders/${orderId}/live`);
+    try {
+      // Get business ID from localStorage (set during onboarding)
+      const businessId = localStorage.getItem('business_id') || 'demo-business';
+      
+      // Build items from selected products
+      const items = selectedProductsList.map(product => ({
+        product: product.name,
+        quantity: quantities[product.id] || product.typicalQuantity,
+        unit: product.unit,
+      }));
+      
+      // Call backend to create order and start agent flow
+      const response = await fetch('http://localhost:8001/orders/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: businessId,
+          items,
+          delivery_date: deliveryDate,
+          delivery_address: deliveryAddress,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.order_id) {
+        // Redirect to live flow with real order ID
+        router.push(`/orders/${data.order_id}/live`);
+      } else {
+        console.error('Failed to create order:', data);
+        setIsCreating(false);
+      }
+    } catch (error) {
+      console.error('Error creating order:', error);
+      setIsCreating(false);
+    }
   };
 
   const selectedProductsList = savedProducts.filter(p => selectedProducts.includes(p.id));
@@ -165,6 +202,36 @@ export default function NewOrder() {
                     </span>
                   </div>
                 ))}
+              </div>
+              
+              {/* Delivery Address */}
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Delivery Address
+                </label>
+                <input
+                  type="text"
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  placeholder="123 Main St, City, State ZIP"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                />
+                <p className="text-xs text-gray-500 mt-1">Where should this be delivered?</p>
+              </div>
+              
+              {/* Delivery Date */}
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Delivery Date
+                </label>
+                <input
+                  type="date"
+                  value={deliveryDate}
+                  onChange={(e) => setDeliveryDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full max-w-xs border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                />
+                <p className="text-xs text-gray-500 mt-1">When do you need this delivered?</p>
               </div>
             </div>
           )}

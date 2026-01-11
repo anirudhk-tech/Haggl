@@ -931,9 +931,101 @@ async def link_phone_to_business(request: LinkPhoneRequest):
 _pending_approvals: dict[str, dict] = {}
 
 
+class OrderItem(BaseModel):
+    """Single item in an order."""
+    product: str
+    quantity: int
+    unit: str
+
+
+class CreateOrderRequest(BaseModel):
+    """Request to create a new order from UI."""
+    business_id: str = Field(description="Business ID from onboarding")
+    items: list[OrderItem] = Field(description="Items to order")
+    delivery_date: Optional[str] = Field(default=None, description="Requested delivery date (YYYY-MM-DD)")
+    delivery_address: Optional[str] = Field(default=None, description="Delivery address")
+
+
 class ApproveOrderRequest(BaseModel):
     """Request to approve an order."""
     order_id: str
+
+
+@app.post("/orders/create")
+async def create_order_from_ui(request: CreateOrderRequest):
+    """
+    Create an order from the UI and trigger the full agent flow.
+    
+    Flow:
+    1. Source vendors for each product
+    2. Call vendors in parallel
+    3. Evaluate results
+    4. Return order ID for live tracking
+    """
+    import asyncio
+    from message_agent.tools.sourcing_tool import source_vendors
+    from message_agent.tools.order_tool import place_orders_parallel
+    
+    order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
+    logger.info(f"Creating order {order_id} for business {request.business_id}")
+    
+    # Get business profile
+    profile = get_business_profile(request.business_id)
+    business_name = profile.business_name if profile else "My Business"
+    
+    # Emit initial stage
+    await emit_stage_change(AgentStage.SOURCING, f"Starting order {order_id}")
+    
+    # Process first item (for now, handle one product at a time)
+    # In production, we'd handle multiple items
+    if not request.items:
+        raise HTTPException(status_code=400, detail="No items in order")
+    
+    item = request.items[0]
+    
+    async def run_order_flow():
+        """Run the full order flow in background."""
+        try:
+            # Step 1: Source vendors
+            await emit_log(AgentStage.SOURCING, f"Searching for {item.product} vendors...")
+            sourcing_result = await source_vendors(item.product, item.quantity, item.unit)
+            
+            if not sourcing_result.get("success") or not sourcing_result.get("vendors"):
+                await emit_log(AgentStage.FAILED, "No vendors found", level="error")
+                return
+            
+            vendors = sourcing_result["vendors"]
+            await emit_log(AgentStage.SOURCING, f"Found {len(vendors)} vendors for {item.product}")
+            
+            # Step 2: Call vendors
+            await emit_stage_change(AgentStage.CALLING, f"Calling {len(vendors)} vendors...")
+            
+            result = await place_orders_parallel(
+                product=item.product,
+                quantity=item.quantity,
+                unit=item.unit,
+                vendors=vendors,
+                order_id=order_id,
+                business_name=business_name,
+                business_id=request.business_id,
+                delivery_date=request.delivery_date,
+                delivery_address=request.delivery_address,
+            )
+            
+            logger.info(f"Order {order_id} flow complete: {result}")
+            
+        except Exception as e:
+            logger.error(f"Order flow error: {e}")
+            await emit_log(AgentStage.FAILED, f"Error: {str(e)}", level="error")
+    
+    # Start flow in background
+    asyncio.create_task(run_order_flow())
+    
+    return {
+        "status": "created",
+        "order_id": order_id,
+        "message": f"Order created! Sourcing vendors for {len(request.items)} items...",
+    }
 
 
 @app.get("/orders/pending")
