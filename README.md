@@ -11,10 +11,29 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/haggl/haggl/actions/workflows/ci.yml">
+    <img src="https://github.com/haggl/haggl/actions/workflows/ci.yml/badge.svg" alt="CI Status"/>
+  </a>
+  <a href="https://codecov.io/gh/haggl/haggl">
+    <img src="https://codecov.io/gh/haggl/haggl/branch/main/graph/badge.svg" alt="Coverage"/>
+  </a>
+  <a href="https://pypi.org/project/haggl/">
+    <img src="https://img.shields.io/pypi/v/haggl?color=blue" alt="PyPI"/>
+  </a>
+  <a href="https://github.com/haggl/haggl/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-green" alt="License"/>
+  </a>
+  <a href="https://github.com/haggl/haggl/stargazers">
+    <img src="https://img.shields.io/github/stars/haggl/haggl?style=social" alt="Stars"/>
+  </a>
+</p>
+
+<p align="center">
   <a href="#quick-start">Quick Start</a> •
   <a href="#how-it-works">How It Works</a> •
   <a href="#agents">Agents</a> •
   <a href="#tech-stack">Tech Stack</a> •
+  <a href="docs/API.md">API Docs</a> •
   <a href="#demo">Demo</a>
 </p>
 
