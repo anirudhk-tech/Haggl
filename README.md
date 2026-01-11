@@ -129,7 +129,7 @@ flowchart TD
 
 ---
 
-## Agents
+## Agents (OpenAI SDK)
 
 | Agent | What It Does | Powered By |
 |-------|--------------|------------|
