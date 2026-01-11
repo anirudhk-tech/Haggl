@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-01-11T00:40:52.954050",
+  "last_updated": "2026-01-11T00:52:48.852853",
   "requests": {
     "source-11c09850": {
       "timestamp": "2026-01-10T21:57:17.940771",
@@ -1989,6 +1989,85 @@
           "extraction_time_seconds": 5.593203067779541
         }
       ]
+    },
+    "source-0ba04e52": {
+      "timestamp": "2026-01-11T00:52:48.852785",
+      "location": {
+        "city": "Des Moines",
+        "state": "IA",
+        "country": "USA",
+        "zip_code": null
+      },
+      "results": [
+        {
+          "ingredient": "Eggs",
+          "vendors": [
+            {
+              "vendor_name": "Des Moines, Iowa Eggs | One of The Largest Egg Suppliers in US",
+              "website": "https://www.eggsunlimited.com/iowa-eggs/",
+              "phone": null,
+              "email": "eusales@eggsunlimited.com",
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.eggsunlimited.com/iowa-eggs/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:52:48.850180"
+            },
+            {
+              "vendor_name": "Fremont Farms: Home",
+              "website": "https://fremontfarms.com/",
+              "phone": "+1-641-528-3447",
+              "email": "info@fremontfarms.com",
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://fremontfarms.com/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:52:48.850653"
+            },
+            {
+              "vendor_name": "Any Egg, Anywhere. The #1 Egg Supplier | Eggs Unlimited",
+              "website": "https://www.eggsunlimited.com/",
+              "phone": null,
+              "email": null,
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.eggsunlimited.com/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:52:48.851193"
+            },
+            {
+              "vendor_name": "Loffredo Fresh Foods | Midwest Food and Produce Distribution",
+              "website": "https://www.loffredo.com/",
+              "phone": null,
+              "email": null,
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.loffredo.com/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:52:48.851768"
+            }
+          ],
+          "search_queries": [],
+          "total_found": 4,
+          "extraction_time_seconds": 13.642559051513672
+        }
+      ]
     }
   },
   "vendors_by_ingredient": {
@@ -2142,6 +2221,21 @@
         "source_url": "https://www.goodegg.com/",
         "extraction_confidence": 0.3,
         "extracted_at": "2026-01-11T00:24:12.804708"
+      },
+      {
+        "vendor_name": "Loffredo Fresh Foods | Midwest Food and Produce Distribution",
+        "website": "https://www.loffredo.com/",
+        "phone": null,
+        "email": null,
+        "address": null,
+        "pricing": null,
+        "quantity": null,
+        "reviews": null,
+        "distance_miles": null,
+        "certifications": [],
+        "source_url": "https://www.loffredo.com/",
+        "extraction_confidence": 0.3,
+        "extracted_at": "2026-01-11T00:52:48.851768"
       }
     ]
   }

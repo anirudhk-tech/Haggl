@@ -4,72 +4,175 @@
   <img src="frontend/public/logo.png" alt="Haggl Logo" width="200"/>
 </p>
 
-**AI agents that source, negotiate, and pay for business supplies autonomously.**
+<h3 align="center">Bringing Back Control to Business Owners</h3>
 
-Haggl is a multi-agent B2B procurement system built for the MongoDB Agentic Orchestration and Collaboration Hackathon. A business owner inputs ingredient needs, budget constraints, and location. Five specialized agents work concurrently to find suppliers via semantic search, negotiate prices through real phone calls, evaluate options using a fine-tuned preference model, and execute payments through the x402 protocol with **real USDC on Base Sepolia**.
+<p align="center">
+  <strong>AI-powered procurement autopilot that sources, negotiates, and pays—so you don't have to.</strong>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#how-it-works">How It Works</a> •
+  <a href="#agents">Agents</a> •
+  <a href="#tech-stack">Tech Stack</a> •
+  <a href="#demo">Demo</a>
+</p>
 
 ---
 
-**Contributors:**
-- Anirudh Kuppili
-- Karthik Reddy
-- Spencer Yang
-- Walter Richard
+## The Problem
 
+Small business owners spend **8+ hours per week** on procurement—calling suppliers, comparing prices, chasing invoices. That's time stolen from customers, creativity, and growth.
+
+## The Solution
+
+Send a message like *"I need 50 dozen eggs delivered Friday"* and Haggl handles everything:
+
+- 🔍 **Finds** the best local vendors instantly
+- 📞 **Calls** multiple suppliers simultaneously  
+- 💰 **Negotiates** bulk pricing automatically
+- ⚖️ **Evaluates** all offers and picks the best deal
+- ✅ **Waits** for your one-click approval
+- 💳 **Pays** securely with full audit trail
+
+**You decide what to buy. AI handles the rest. You approve the final deal.**
 
 ---
 
-## User Flow
+## Quick Start
 
-```mermaid
-flowchart TD
-    A[User Input: 500 lbs flour, 1000 eggs, budget $2000] --> B[Orchestrator]
+```bash
+# Clone and install
+git clone https://github.com/your-org/haggl.git
+cd haggl
+pip install -e .
 
-    B --> C1[Sourcing Agent - flour]
-    B --> C2[Sourcing Agent - eggs]
-    B --> C3[Sourcing Agent - butter]
-    B --> D1[Calling Agent - Vendor A]
-    B --> D2[Calling Agent - Vendor B]
+# Configure environment
+cp env.example .env
+# Edit .env with your API keys
 
-    C1 --> E[(MongoDB Atlas)]
-    C2 --> E
-    C3 --> E
-    D1 --> E
-    D2 --> E
+# Start backend
+python main.py  # Runs on port 8001
 
-    E --> F[Evaluation Agent<br/>Voyage AI Fine-Tuned Model]
+# Start frontend (separate terminal)
+cd frontend && npm install && npm run dev
+```
 
-    F --> G[x402 Authorization Layer<br/>Coinbase CDP]
+Then open [http://localhost:3000](http://localhost:3000) and complete onboarding.
 
-    G -->|AUTHORIZED| H[Payment Agent<br/>Browserbase]
+---
 
-    H --> I[Escrow Release<br/>MongoDB Audit Trail]
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         YOU                                      │
+│                                                                  │
+│   "I need 50 dozen eggs delivered to                            │
+│    123 Main St by Friday"                                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    MESSAGE AGENT                                 │
+│         Understands your request via WhatsApp/SMS               │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   SOURCING AGENT                                 │
+│    Finds local vendors using Exa.ai semantic search             │
+│    Ranks by distance, quality, reliability                      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│  CALLING AGENT   │ │  CALLING AGENT   │ │  CALLING AGENT   │
+│   Vendor A 📞    │ │   Vendor B 📞    │ │   Vendor C 📞    │
+│  (parallel)      │ │  (parallel)      │ │  (parallel)      │
+└──────────────────┘ └──────────────────┘ └──────────────────┘
+              │               │               │
+              └───────────────┼───────────────┘
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  EVALUATION AGENT                                │
+│      Scores all offers using Voyage AI embeddings               │
+│      Learns your preferences over time                          │
+│      Picks the best deal                                        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    ✋ YOUR APPROVAL                              │
+│                                                                  │
+│   "Fresh Farms: 50 dozen eggs @ $3.50/dz = $175"               │
+│   "Delivery: Friday 10am"                                       │
+│                                                                  │
+│              [ APPROVE ]     [ REJECT ]                         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   PAYMENT AGENT                                  │
+│         Executes secure payment with audit trail                │
+│         Card / ACH / Browser automation                         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                         ✅ DONE
 ```
 
 ---
 
-## Agent Architecture
+## Agents
 
-| Agent | Sponsor | Function |
-|-------|---------|----------|
-| **Sourcing Agent** | Research API | Semantic search for wholesale suppliers. Builds multiple query variants, executes parallel searches, extracts structured vendor data. |
-| **Calling Agent** | Voice API | Real outbound phone calls to negotiate bulk discounts. AI assistant conducts natural conversation, parses transcripts for confirmed prices. |
-| **Evaluation Agent** | Voyage AI | Vendor scoring using fine-tuned preference model. Combines embedding similarity (30%) with explicit parameters (70%). User feedback adjusts weights in real-time. |
-| **Message Agent** | Messaging API | SMS/WhatsApp conversational ordering. Business owners text to reorder, approve purchases, or check status. |
-| **Payment Agent** | x402 + Browserbase | Cryptographic authorization followed by browser-automated ACH execution. Secure credential injection without AI exposure. |
+| Agent | What It Does | Powered By |
+|-------|--------------|------------|
+| **Message Agent** | Conversational ordering via WhatsApp/SMS. Understands natural language requests. | OpenAI, Vonage |
+| **Sourcing Agent** | Semantic search for wholesale suppliers. Extracts pricing, ratings, certifications. | Exa.ai |
+| **Calling Agent** | Real phone calls to negotiate bulk pricing. Natural voice conversations. | Vapi |
+| **Evaluation Agent** | Scores vendors on price, quality, reliability. Learns your preferences. | Voyage AI |
+| **Payment Agent** | Executes secure payments. Supports card, ACH, browser automation. | Stripe, Browserbase |
 
 ---
 
-## Technology Stack
+## Features
+
+### 💬 Order via WhatsApp
+Text your needs in plain English. No apps to download, no forms to fill.
+
+### 📞 Parallel Negotiations
+Calls 3+ vendors simultaneously. Gets you competitive quotes in minutes, not hours.
+
+### 🎯 Smart Vendor Selection
+AI evaluates every offer on price, quality, reliability, and distance. Learns what matters to you.
+
+### 👁️ Real-Time Dashboard
+Watch every agent action as it happens. Full transparency into the procurement process.
+
+### ✅ One-Click Approval
+Review the best deal and approve instantly. You stay in control.
+
+### 🔒 Secure Payments
+Full audit trail. Encrypted credentials. Optional x402 blockchain authorization.
+
+---
+
+## Tech Stack
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
-| **Database** | MongoDB Atlas | Agent state, credentials, escrow, audit |
-| **Embeddings** | Voyage AI | Vendor scoring, preference learning |
-| **Authorization** | x402 (Coinbase CDP) | Cryptographic spending approval |
-| **Browser** | Browserbase | Cloud browser payment execution |
-| **Backend** | FastAPI + Python | API server |
-| **Frontend** | Next.js + React | Dashboard UI |
+| **Backend** | FastAPI + Python | Async API server |
+| **Frontend** | Next.js 14 + React | Real-time dashboard |
+| **Database** | MongoDB Atlas | State, history, audit logs |
+| **AI** | OpenAI GPT-4 | Function calling, conversation |
+| **Voice** | Vapi | Outbound phone calls |
+| **Search** | Exa.ai | Semantic vendor discovery |
+| **Embeddings** | Voyage AI | Vendor scoring & preferences |
+| **Messaging** | Vonage | WhatsApp Business API |
+| **Payments** | Stripe / Browserbase | Card, ACH, portal automation |
+| **Auth** | x402 (Coinbase CDP) | Optional blockchain authorization |
 
 ---
 
@@ -78,113 +181,135 @@ flowchart TD
 ```
 Haggl/
 ├── src/
-│   ├── sourcing_agent/          # Semantic search + data extraction
-│   │   ├── agent.py             # State machine
+│   ├── server.py                 # FastAPI main application
+│   ├── events.py                 # Real-time SSE event streaming
+│   │
+│   ├── message_agent/            # WhatsApp/SMS ordering
+│   │   ├── agent.py              # Conversation handler
 │   │   └── tools/
+│   │       ├── vonage_tool.py    # WhatsApp integration
+│   │       ├── sourcing_tool.py  # Bridges to Sourcing Agent
+│   │       ├── order_tool.py     # Bridges to Calling Agent
+│   │       └── evaluation_tool.py# Bridges to Eval Agent
 │   │
-│   ├── calling_agent/           # Voice negotiations
-│   │   ├── agent.py             # State machine
+│   ├── sourcing_agent/           # Vendor discovery
+│   │   ├── agent.py              # Search orchestration
 │   │   └── tools/
+│   │       └── exa_tool.py       # Exa.ai semantic search
 │   │
-│   ├── evaluation_agent/        # Voyage AI scoring
-│   │   ├── agent.py             # Vendor scoring and selection
-│   │   ├── fine_tune.py         # Contrastive preference learning
+│   ├── calling_agent/            # Voice negotiations
+│   │   ├── agent.py              # Call state machine
 │   │   └── tools/
+│   │       └── vapi_tool.py      # Vapi voice API
 │   │
-│   ├── message_agent/           # SMS ordering
-│   │   ├── agent.py             # Conversation handler
+│   ├── evaluation_agent/         # Vendor scoring
+│   │   ├── agent.py              # Scoring logic
 │   │   └── tools/
+│   │       └── voyage_tool.py    # Voyage AI embeddings
 │   │
-│   ├── payment_agent/           # Payment execution
-│   │   ├── executor.py          # ACH execution logic
-│   │   └── browserbase.py       # Browserbase cloud browser
+│   ├── payment_agent/            # Payment execution
+│   │   ├── executor.py           # Payment orchestration
+│   │   ├── browserbase.py        # Cloud browser automation
+│   │   └── schemas.py            # Payment types
 │   │
-│   ├── x402/                    # Authorization layer
-│   │   ├── authorizer.py        # Budget enforcement + auth token
-│   │   ├── wallet.py            # CDP wallet integration
-│   │   ├── credential_vault.py  # AES-256-GCM encrypted storage
-│   │   ├── escrow.py            # Escrow lock/release management
-│   │   └── mongodb.py           # Database connection
+│   ├── x402/                     # Blockchain authorization
+│   │   ├── authorizer.py         # Budget enforcement
+│   │   ├── wallet.py             # CDP wallet
+│   │   └── escrow.py             # Escrow management
 │   │
-│   └── server.py                # FastAPI main application
+│   └── storage/                  # MongoDB persistence
+│       ├── database.py           # Connection management
+│       ├── vendors.py            # Vendor storage
+│       ├── orders.py             # Order tracking
+│       ├── calls.py              # Call history
+│       └── businesses.py         # Business profiles
 │
-├── frontend/                    # Next.js dashboard
-├── plans/                       # Architecture documentation
-├── configs/                     # Agent configuration files
-└── demo_full_flow.py            # Complete demo script
+├── frontend/                     # Next.js dashboard
+│   ├── app/
+│   │   ├── orders/               # Order management
+│   │   ├── new-order/            # Create new order
+│   │   └── onboarding/           # Business setup
+│   └── lib/
+│       └── useAgentEvents.ts     # SSE event hook
+│
+├── main.py                       # CLI entry point
+├── pyproject.toml                # Python dependencies
+└── env.example                   # Environment template
 ```
 
 ---
 
-## Running the Demo
+## Environment Variables
 
 ```bash
-# Install dependencies
-pip install -e .
-cd frontend && npm install && cd ..
+# OpenAI
+OPENAI_API_KEY=sk-...
 
-# Start backend
-uvicorn src.server:app --reload --port 8000
+# Vapi (Voice Calls)
+VAPI_API_KEY=...
+VAPI_PHONE_NUMBER_ID=...
 
-# Start frontend (separate terminal)
-cd frontend && npm run dev
+# Vonage (WhatsApp)
+VONAGE_API_KEY=...
+VONAGE_API_SECRET=...
+VONAGE_WHATSAPP_NUMBER=14157386102
 
-# Run full payment flow demo
-python demo_full_flow.py
+# Exa.ai (Search)
+EXA_API_KEY=...
+
+# Voyage AI (Embeddings)
+VOYAGE_API_KEY=...
+
+# MongoDB
+MONGODB_URI=mongodb+srv://...
+MONGODB_DB=haggl
+
+# Optional: x402 Blockchain Auth
+WALLET_PRIVATE_KEY=0x...
+ESCROW_WALLET_ADDRESS=0x...
 ```
 
 ---
 
-## Hackathon Alignment
+## Demo
 
-| Criterion | Implementation |
-|-----------|----------------|
-| **Demo (50%)** | Real phone calls, real x402 on-chain transactions, real Browserbase payment execution, all logged to MongoDB |
-| **Impact (25%)** | $2.3T B2B procurement market. Saves 5-10 hours/week of manual sourcing. Negotiates 10-20% discounts via AI calls. |
-| **Creativity (15%)** | First integration of x402 authorization with legacy ACH execution. Fine-tuned Voyage AI preference model for vendor evaluation. |
-| **Pitch (10%)** | Live demo with on-chain proof via BaseScan |
+### Via WhatsApp (Recommended)
+
+1. Complete onboarding at [http://localhost:3000/onboarding](http://localhost:3000/onboarding)
+2. Send a WhatsApp message to the Vonage sandbox number
+3. Watch the live dashboard as agents work
+4. Approve the best deal with one click
+
+### Via Dashboard
+
+1. Go to [http://localhost:3000/new-order](http://localhost:3000/new-order)
+2. Select products and enter delivery details
+3. Click "Start Negotiation"
+4. Watch agents source, call, and evaluate
+5. Approve and pay
 
 ---
 
-## 🌐 Real USDC Testnet Setup
+## API Endpoints
 
-Haggl supports **real USDC transactions** on Base Sepolia testnet:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/orders/create` | POST | Create order and start agent flow |
+| `/orders/pending` | GET | Get orders awaiting approval |
+| `/orders/approve` | POST | Approve order and trigger payment |
+| `/events/stream` | GET | SSE stream for real-time updates |
+| `/webhooks/vonage/inbound` | POST | WhatsApp message webhook |
+| `/calling/call` | POST | Initiate vendor call |
+| `/sourcing/search` | POST | Search for vendors |
 
-### Setup Wallets
+---
 
-```python
-from eth_account import Account
+## Contributors
 
-# Main wallet (sends USDC)
-main = Account.create()
-print(f"Address: {main.address}")
-print(f"Private Key: {main.key.hex()}")
-
-# Escrow wallet (receives authorized USDC)
-escrow = Account.create()
-print(f"Escrow: {escrow.address}")
-```
-
-### Fund the Wallet
-
-1. **ETH for gas**: [Coinbase Faucet](https://www.coinbase.com/faucets/base-ethereum-goerli-faucet)
-2. **USDC**: [Circle Faucet](https://faucet.circle.com/) (select Base Sepolia)
-
-### Configure `.env`
-
-```bash
-WALLET_PRIVATE_KEY=0xYourPrivateKeyHere
-ESCROW_WALLET_ADDRESS=0xYourEscrowAddressHere
-```
-
-### Verify Setup
-
-```bash
-curl http://localhost:8082/x402/wallet
-# Should show: "mode": "web3"
-```
-
-**USDC Contract**: `0x036CbD53842c5426634e7929541eC2318f3dCF7e` (Base Sepolia)
+- **Anirudh Kuppili**
+- **Karthik Reddy**
+- **Spencer Yang**
+- **Walter Richard**
 
 ---
 
@@ -194,4 +319,10 @@ MIT License
 
 ---
 
-Built for the MongoDB Agentic Orchestration and Collaboration Hackathon, January 2026. **Real USDC on Base Sepolia** 🚀
+<p align="center">
+  <strong>Your AI procurement team. Your rules. Your time back.</strong>
+</p>
+
+<p align="center">
+  Built for the MongoDB Agentic Orchestration and Collaboration Hackathon, January 2026
+</p>
