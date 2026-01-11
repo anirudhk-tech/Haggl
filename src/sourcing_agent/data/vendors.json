@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-01-11T00:27:14.133925",
+  "last_updated": "2026-01-11T00:40:52.954050",
   "requests": {
     "source-11c09850": {
       "timestamp": "2026-01-10T21:57:17.940771",
@@ -1814,6 +1814,179 @@
           "search_queries": [],
           "total_found": 4,
           "extraction_time_seconds": 0.0018186569213867188
+        }
+      ]
+    },
+    "source-f6081e9b": {
+      "timestamp": "2026-01-11T00:36:58.543102",
+      "location": {
+        "city": "Des Moines",
+        "state": "IA",
+        "country": "USA",
+        "zip_code": null
+      },
+      "results": [
+        {
+          "ingredient": "Eggs",
+          "vendors": [
+            {
+              "vendor_name": "Des Moines, Iowa Eggs | One of The Largest Egg Suppliers in US",
+              "website": "https://www.eggsunlimited.com/iowa-eggs/",
+              "phone": null,
+              "email": "eusales@eggsunlimited.com",
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.eggsunlimited.com/iowa-eggs/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:36:58.540430"
+            },
+            {
+              "vendor_name": "Fremont Farms: Home",
+              "website": "https://fremontfarms.com/",
+              "phone": "+1-641-528-3447",
+              "email": "info@fremontfarms.com",
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://fremontfarms.com/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:36:58.540976"
+            },
+            {
+              "vendor_name": "Any Egg, Anywhere. The #1 Egg Supplier | Eggs Unlimited",
+              "website": "https://www.eggsunlimited.com/",
+              "phone": null,
+              "email": null,
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.eggsunlimited.com/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:36:58.541489"
+            },
+            {
+              "vendor_name": "Buy Shell Eggs Wholesale: Premium Bulk Distribution",
+              "website": "https://www.eggsunlimited.com/products/shell-eggs/",
+              "phone": null,
+              "email": null,
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.eggsunlimited.com/products/shell-eggs/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:36:58.542047"
+            },
+            {
+              "vendor_name": "Iowa-Des Moines Supply | Products Distributor for Businesses",
+              "website": "https://www.iowadesmoinessupply.com/",
+              "phone": "+1-515-263-1200",
+              "email": null,
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.iowadesmoinessupply.com/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:36:58.542305"
+            }
+          ],
+          "search_queries": [],
+          "total_found": 5,
+          "extraction_time_seconds": 4.706070184707642
+        }
+      ]
+    },
+    "source-e23fda5b": {
+      "timestamp": "2026-01-11T00:40:52.953989",
+      "location": {
+        "city": "Des Moines",
+        "state": "IA",
+        "country": "USA",
+        "zip_code": null
+      },
+      "results": [
+        {
+          "ingredient": "Eggs",
+          "vendors": [
+            {
+              "vendor_name": "Des Moines, Iowa Eggs | One of The Largest Egg Suppliers ...",
+              "website": "https://www.eggsunlimited.com/iowa-eggs/",
+              "phone": null,
+              "email": "eusales@eggsunlimited.com",
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.eggsunlimited.com/iowa-eggs/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:40:52.949541"
+            },
+            {
+              "vendor_name": "Fremont Farms: Home",
+              "website": "https://fremontfarms.com/",
+              "phone": "+1-641-528-3447",
+              "email": "info@fremontfarms.com",
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://fremontfarms.com/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:40:52.950002"
+            },
+            {
+              "vendor_name": "Any Egg, Anywhere. The #1 Egg Supplier | Eggs Unlimited",
+              "website": "https://www.eggsunlimited.com/",
+              "phone": null,
+              "email": null,
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.eggsunlimited.com/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:40:52.950549"
+            },
+            {
+              "vendor_name": "Iowa-Des Moines Supply | Products Distributor for Businesses",
+              "website": "https://www.iowadesmoinessupply.com/",
+              "phone": "+1-515-263-1200",
+              "email": null,
+              "address": null,
+              "pricing": null,
+              "quantity": null,
+              "reviews": null,
+              "distance_miles": null,
+              "certifications": [],
+              "source_url": "https://www.iowadesmoinessupply.com/",
+              "extraction_confidence": 0.3,
+              "extracted_at": "2026-01-11T00:40:52.950854"
+            }
+          ],
+          "search_queries": [],
+          "total_found": 4,
+          "extraction_time_seconds": 5.593203067779541
         }
       ]
     }

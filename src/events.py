@@ -26,6 +26,8 @@ class AgentStage(str, Enum):
     CONFIRMED = "confirmed"
     APPROVAL_PENDING = "approval_pending"
     APPROVED = "approved"
+    PAYING = "paying"
+    PAYMENT_COMPLETE = "payment_complete"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -39,6 +41,7 @@ class EventType(str, Enum):
     EVALUATION_UPDATE = "evaluation_update"
     ORDER_UPDATE = "order_update"
     APPROVAL_REQUIRED = "approval_required"
+    PAYMENT_UPDATE = "payment_update"
     SYSTEM = "system"
 
 
@@ -268,5 +271,53 @@ async def emit_order_approved(order_id: str, vendor_name: str):
         order_id=order_id,
         message=f"Order approved! Proceeding with {vendor_name}",
         data={"vendor_name": vendor_name, "action": "approved"},
+    )
+    await get_event_bus().publish(event)
+
+
+async def emit_payment_started(order_id: str, vendor_name: str, amount: float):
+    """Emit payment started event."""
+    event = AgentEvent(
+        event_type=EventType.PAYMENT_UPDATE,
+        stage=AgentStage.PAYING,
+        order_id=order_id,
+        message=f"Processing payment of ${amount:.2f} to {vendor_name}...",
+        data={"vendor_name": vendor_name, "amount": amount, "status": "processing"},
+    )
+    await get_event_bus().publish(event)
+
+
+async def emit_payment_complete(
+    order_id: str,
+    vendor_name: str,
+    amount: float,
+    confirmation: str,
+    receipt_url: Optional[str] = None,
+):
+    """Emit payment complete event."""
+    event = AgentEvent(
+        event_type=EventType.PAYMENT_UPDATE,
+        stage=AgentStage.PAYMENT_COMPLETE,
+        order_id=order_id,
+        message=f"✅ Payment complete! ${amount:.2f} paid to {vendor_name}",
+        data={
+            "vendor_name": vendor_name,
+            "amount": amount,
+            "status": "succeeded",
+            "confirmation": confirmation,
+            "receipt_url": receipt_url,
+        },
+    )
+    await get_event_bus().publish(event)
+
+
+async def emit_payment_failed(order_id: str, vendor_name: str, error: str):
+    """Emit payment failed event."""
+    event = AgentEvent(
+        event_type=EventType.PAYMENT_UPDATE,
+        stage=AgentStage.FAILED,
+        order_id=order_id,
+        message=f"❌ Payment failed: {error}",
+        data={"vendor_name": vendor_name, "status": "failed", "error": error},
     )
     await get_event_bus().publish(event)

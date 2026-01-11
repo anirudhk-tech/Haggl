@@ -1042,32 +1042,74 @@ async def approve_order(request: ApproveOrderRequest):
     """
     Approve an order for payment.
     
-    This will eventually trigger x402 payment flow.
+    Triggers the payment flow using PaymentExecutor.
     """
+    import asyncio
+    from events import emit_payment_started, emit_payment_complete, emit_payment_failed
+    from payment_agent import get_executor, PaymentRequest, PaymentMethod, PaymentStatus
+    
     order_id = request.order_id
     
+    # Get order details
     if order_id in _pending_approvals:
         order = _pending_approvals.pop(order_id)
-        vendor_name = order.get("vendor_name", "Unknown")
-        
-        # Emit approval event
-        await emit_order_approved(order_id, vendor_name)
-        
-        logger.info(f"✅ Order {order_id} approved!")
-        
-        return {
-            "status": "approved",
-            "order_id": order_id,
-            "message": f"Order approved! Will process payment to {vendor_name}.",
-        }
+        vendor_name = order.get("vendor_name", "Demo Vendor")
+        amount = order.get("price", 100.00)
+        product = order.get("product", "items")
+        quantity = order.get("quantity", 1)
+    else:
+        # Demo mode with mock data
+        vendor_name = "Demo Vendor"
+        amount = 100.00
+        product = "items"
+        quantity = 1
     
-    # Even if not in pending, emit the event for demo purposes
-    await emit_order_approved(order_id, "Demo Vendor")
+    # Emit approval event
+    await emit_order_approved(order_id, vendor_name)
+    logger.info(f"✅ Order {order_id} approved!")
+    
+    # Run payment flow in background
+    async def run_payment_flow():
+        try:
+            # Emit payment started
+            await emit_payment_started(order_id, vendor_name, amount)
+            
+            # Execute payment using mock card
+            executor = get_executor(simulate_delays=True)
+            payment_request = PaymentRequest(
+                auth_token=f"x402-{order_id}",  # Mock x402 token
+                invoice_id=order_id,
+                amount_usd=amount,
+                vendor_name=vendor_name,
+                payment_method=PaymentMethod.MOCK_CARD,
+            )
+            
+            result = await executor.execute_payment(payment_request)
+            
+            if result.status == PaymentStatus.SUCCEEDED:
+                await emit_payment_complete(
+                    order_id=order_id,
+                    vendor_name=vendor_name,
+                    amount=amount,
+                    confirmation=result.confirmation_number or "CONF-DEMO",
+                    receipt_url=result.receipt_url,
+                )
+                logger.info(f"💳 Payment complete for {order_id}: {result.confirmation_number}")
+            else:
+                await emit_payment_failed(order_id, vendor_name, result.error or "Unknown error")
+                logger.error(f"❌ Payment failed for {order_id}: {result.error}")
+                
+        except Exception as e:
+            logger.exception(f"Payment flow error: {e}")
+            await emit_payment_failed(order_id, vendor_name, str(e))
+    
+    # Start payment in background
+    asyncio.create_task(run_payment_flow())
     
     return {
         "status": "approved",
         "order_id": order_id,
-        "message": "Order approved!",
+        "message": f"Order approved! Processing payment to {vendor_name}...",
     }
 
 

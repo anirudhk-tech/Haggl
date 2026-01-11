@@ -40,6 +40,8 @@ const stageToPhase: Record<string, Phase> = {
   'evaluating': 'evaluating',
   'approval_pending': 'approval',
   'approved': 'payment',
+  'paying': 'payment',
+  'payment_complete': 'complete',
   'completed': 'complete',
   'failed': 'complete',
 };
@@ -53,6 +55,13 @@ export default function LiveOrderFlow({ params }: { params: { id: string } }) {
   const [showTranscript, setShowTranscript] = useState(false);
   const [connected, setConnected] = useState(false);
   const [bestVendor, setBestVendor] = useState<{ name: string; price: number; discount?: number } | null>(null);
+  const [paymentInfo, setPaymentInfo] = useState<{ 
+    status: string; 
+    confirmation?: string; 
+    receipt_url?: string; 
+    amount?: number;
+    vendor_name?: string;
+  } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   // Connect to SSE stream
@@ -138,11 +147,22 @@ export default function LiveOrderFlow({ params }: { params: { id: string } }) {
             });
           }
           
+          // Handle payment updates
+          if (data.type === 'payment_update' && data.data) {
+            setPaymentInfo({
+              status: data.data.status,
+              confirmation: data.data.confirmation,
+              receipt_url: data.data.receipt_url,
+              amount: data.data.amount,
+              vendor_name: data.data.vendor_name,
+            });
+          }
+          
           // Handle completion
-          if (data.stage === 'completed' || data.type === 'order_approved') {
+          if (data.stage === 'payment_complete' || data.stage === 'completed') {
             setTimeout(() => {
               router.push('/orders');
-            }, 3000);
+            }, 5000);
           }
           
         } catch (e) {
@@ -511,9 +531,9 @@ export default function LiveOrderFlow({ params }: { params: { id: string } }) {
                     <span>Delivery</span>
                   </div>
                   {bestVendor?.discount && (
-                    <div className="inline-block bg-brand-light text-brand px-4 py-2 rounded-full text-sm font-medium mb-6">
+                  <div className="inline-block bg-brand-light text-brand px-4 py-2 rounded-full text-sm font-medium mb-6">
                       Saved {bestVendor.discount}%
-                    </div>
+                  </div>
                   )}
                   <div className="flex gap-4">
                     <button 
@@ -538,21 +558,79 @@ export default function LiveOrderFlow({ params }: { params: { id: string } }) {
               </div>
             )}
 
+            {currentPhase === 'payment' && (
+              <div className="w-full max-w-2xl mt-6">
+                <div className="bg-gray-50 rounded-lg p-8 text-center">
+                  <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-status-purple-light flex items-center justify-center">
+                    <CreditCard className="text-status-purple animate-pulse" size={32} />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">Processing Payment</h3>
+                  <p className="text-gray-500 mb-4">
+                    {paymentInfo?.status === 'processing' 
+                      ? `Paying ${paymentInfo?.vendor_name || bestVendor?.name}...`
+                      : 'Preparing secure payment...'
+                    }
+                  </p>
+                  {paymentInfo?.amount && (
+                    <p className="text-2xl font-bold text-status-purple">${paymentInfo.amount.toFixed(2)}</p>
+                  )}
+                  <div className="mt-6 flex items-center justify-center gap-2 text-sm text-gray-400">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Securely processing via mock payment</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {currentPhase === 'complete' && (
               <div className="w-full max-w-2xl mt-6">
-                <div className="bg-brand-light rounded-lg p-8">
-                  <p className="text-lg text-gray-900 mb-4">Your order has been successfully placed!</p>
-                  <div className="space-y-2 text-sm text-gray-600 mb-6">
-                    <p>Vendor: Fresh Farms</p>
-                    <p>Total: $842.50</p>
-                    <p>Transaction: 0xA3F8...5678</p>
+                <div className="bg-brand-light rounded-lg p-8 text-center">
+                  <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-brand flex items-center justify-center">
+                    <Check className="text-white" size={32} />
                   </div>
-                  <Link
-                    href="/orders"
-                    className="inline-block bg-brand hover:bg-brand-dark text-white font-medium px-6 py-3 rounded-lg transition-colors"
-                  >
-                    View All Orders
-                  </Link>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Complete!</h2>
+                  <p className="text-lg text-gray-600 mb-6">Your order has been successfully placed.</p>
+                  <div className="bg-white rounded-lg p-6 mb-6 text-left">
+                    <div className="space-y-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Vendor</span>
+                        <span className="font-medium text-gray-900">{paymentInfo?.vendor_name || bestVendor?.name || 'Vendor'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Amount Paid</span>
+                        <span className="font-medium text-brand">${paymentInfo?.amount?.toFixed(2) || bestVendor?.price?.toFixed(2) || '0.00'}</span>
+                      </div>
+                      {paymentInfo?.confirmation && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Confirmation</span>
+                          <span className="font-mono text-xs text-gray-900">{paymentInfo.confirmation}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Order ID</span>
+                        <span className="font-mono text-xs text-gray-900">{params.id}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {paymentInfo?.receipt_url && (
+                    <a
+                      href={paymentInfo.receipt_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-brand hover:underline mb-4 inline-block"
+                    >
+                      View Receipt →
+                    </a>
+                  )}
+                  <div className="mt-4">
+                    <Link
+                      href="/orders"
+                      className="inline-block bg-brand hover:bg-brand-dark text-white font-medium px-6 py-3 rounded-lg transition-colors"
+                    >
+                      View All Orders
+                    </Link>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-4">Redirecting in 5 seconds...</p>
                 </div>
               </div>
             )}
