@@ -81,8 +81,10 @@ from storage.businesses import (
     get_business_context_for_agent,
 )
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from project root
+import pathlib
+project_root = pathlib.Path(__file__).parent.parent
+load_dotenv(project_root / ".env")
 
 # Configure logging
 logging.basicConfig(
@@ -124,7 +126,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3001",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
         os.getenv("NEXT_PUBLIC_APP_URL", "http://localhost:3000"),
     ],
     allow_credentials=True,

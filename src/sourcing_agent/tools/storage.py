@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ def get_vendors_by_ingredient(ingredient: str) -> list[dict]:
     return vendors_by_ingredient.get(ingredient.lower(), [])
 
 
-def get_request_results(request_id: str) -> dict | None:
+def get_request_results(request_id: str) -> Optional[dict]:
     """
     Get results for a specific request.
 

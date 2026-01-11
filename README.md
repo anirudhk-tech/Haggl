@@ -6,7 +6,7 @@
 
 **AI agents that source, negotiate, and pay for business supplies autonomously.**
 
-Haggl is a multi-agent B2B procurement system built for the MongoDB Agentic Orchestration and Collaboration Hackathon. A business owner inputs ingredient needs, budget constraints, and location. Five specialized agents work concurrently to find suppliers via semantic search, negotiate prices through real phone calls, evaluate options using a fine-tuned preference model, and execute payments through the x402 protocol.
+Haggl is a multi-agent B2B procurement system built for the MongoDB Agentic Orchestration and Collaboration Hackathon. A business owner inputs ingredient needs, budget constraints, and location. Five specialized agents work concurrently to find suppliers via semantic search, negotiate prices through real phone calls, evaluate options using a fine-tuned preference model, and execute payments through the x402 protocol with **real USDC on Base Sepolia**.
 
 ---
 
@@ -146,10 +146,52 @@ python demo_full_flow.py
 
 ---
 
+## 🌐 Real USDC Testnet Setup
+
+Haggl supports **real USDC transactions** on Base Sepolia testnet:
+
+### Setup Wallets
+
+```python
+from eth_account import Account
+
+# Main wallet (sends USDC)
+main = Account.create()
+print(f"Address: {main.address}")
+print(f"Private Key: {main.key.hex()}")
+
+# Escrow wallet (receives authorized USDC)
+escrow = Account.create()
+print(f"Escrow: {escrow.address}")
+```
+
+### Fund the Wallet
+
+1. **ETH for gas**: [Coinbase Faucet](https://www.coinbase.com/faucets/base-ethereum-goerli-faucet)
+2. **USDC**: [Circle Faucet](https://faucet.circle.com/) (select Base Sepolia)
+
+### Configure `.env`
+
+```bash
+WALLET_PRIVATE_KEY=0xYourPrivateKeyHere
+ESCROW_WALLET_ADDRESS=0xYourEscrowAddressHere
+```
+
+### Verify Setup
+
+```bash
+curl http://localhost:8082/x402/wallet
+# Should show: "mode": "web3"
+```
+
+**USDC Contract**: `0x036CbD53842c5426634e7929541eC2318f3dCF7e` (Base Sepolia)
+
+---
+
 ## License
 
 MIT License
 
 ---
 
-Built for the MongoDB Agentic Orchestration and Collaboration Hackathon, January 2026.
+Built for the MongoDB Agentic Orchestration and Collaboration Hackathon, January 2026. **Real USDC on Base Sepolia** 🚀

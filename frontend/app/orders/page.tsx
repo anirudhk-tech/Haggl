@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { OrderCard } from '@/components/OrderCard';
+import { PaymentModal } from '@/components/PaymentModal';
 import Link from 'next/link';
 import { useAgentEvents, type AgentEvent } from '@/lib/useAgentEvents';
 import { Check, Loader2, RefreshCw, Wifi, WifiOff } from 'lucide-react';
@@ -11,7 +12,15 @@ const allOrders = [
   { orderId: '#ORD-001', items: 8, status: 'sourcing' as const, total: '$842.50', date: 'Jan 10, 2026', live: true },
   { orderId: '#ORD-002', items: 12, status: 'negotiating' as const, total: '$1,240.00', date: 'Jan 9, 2026', live: true },
   { orderId: '#ORD-003', items: 5, status: 'awaiting-approval' as const, total: '$450.00', date: 'Jan 8, 2026' },
-  { orderId: '#ORD-004', items: 15, status: 'paying' as const, total: '$1,850.00', date: 'Jan 7, 2026' },
+  { 
+    orderId: '#ORD-004', 
+    items: 15, 
+    status: 'paying' as const, 
+    total: '$0.01', 
+    date: 'Jan 7, 2026',
+    invoiceUrl: 'https://connect.intuit.com/t/scs-v1-26297a3db4e7480aafeabb334abefac156cc685711ec4c7fb924a5173d9a44b4b84020803d524618846eb7c5280bb7f2?cta=viewinvoicenow&locale=en_US&grw=email_pay_button_t1',
+    vendorName: 'Best Egg Co',
+  },
   { orderId: '#ORD-005', items: 6, status: 'complete' as const, total: '$320.00', date: 'Jan 6, 2026' },
   { orderId: '#ORD-006', items: 10, status: 'complete' as const, total: '$680.00', date: 'Jan 5, 2026' },
   { orderId: '#ORD-007', items: 4, status: 'complete' as const, total: '$240.00', date: 'Jan 4, 2026' },
@@ -155,6 +164,19 @@ export default function Orders() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const { events, connected, pendingApprovals, approveOrder, refresh } = useAgentEvents();
+  const [paymentModal, setPaymentModal] = useState<{
+    isOpen: boolean;
+    orderId: string;
+    invoiceUrl: string;
+    amount: string;
+    vendorName: string;
+  }>({
+    isOpen: false,
+    orderId: '',
+    invoiceUrl: '',
+    amount: '',
+    vendorName: '',
+  });
 
   // Check if onboarding is complete
   useEffect(() => {
@@ -163,6 +185,23 @@ export default function Orders() {
       router.push('/onboarding');
     }
   }, [router]);
+
+  const handlePayInvoice = (orderId: string, invoiceUrl: string) => {
+    const order = allOrders.find(o => o.orderId === orderId);
+    if (order) {
+      setPaymentModal({
+        isOpen: true,
+        orderId: order.orderId,
+        invoiceUrl: invoiceUrl,
+        amount: order.total,
+        vendorName: (order as any).vendorName || 'Vendor',
+      });
+    }
+  };
+
+  const closePaymentModal = () => {
+    setPaymentModal(prev => ({ ...prev, isOpen: false }));
+  };
 
   // Separate active and completed orders
   const activeOrders = allOrders.filter(order => 
@@ -218,7 +257,13 @@ export default function Orders() {
           <div className="bg-white rounded-xl shadow-sm">
             <div className="divide-y divide-gray-200">
               {activeOrders.map((order) => (
-                <OrderCard key={order.orderId} {...order} live={order.live} />
+                <OrderCard 
+                  key={order.orderId} 
+                  {...order} 
+                  live={order.live} 
+                  invoiceUrl={(order as any).invoiceUrl}
+                  onPayInvoice={handlePayInvoice}
+                />
               ))}
             </div>
           </div>
@@ -235,7 +280,13 @@ export default function Orders() {
           <div className="bg-white rounded-xl shadow-sm">
             <div className="divide-y divide-gray-200">
               {pastOrders.map((order) => (
-                <OrderCard key={order.orderId} {...order} live={order.live} />
+                <OrderCard 
+                  key={order.orderId} 
+                  {...order} 
+                  live={order.live}
+                  invoiceUrl={(order as any).invoiceUrl}
+                  onPayInvoice={handlePayInvoice}
+                />
               ))}
             </div>
           </div>
@@ -258,7 +309,16 @@ export default function Orders() {
           </Link>
         </div>
       )}
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={paymentModal.isOpen}
+        onClose={closePaymentModal}
+        orderId={paymentModal.orderId}
+        invoiceUrl={paymentModal.invoiceUrl}
+        amount={paymentModal.amount}
+        vendorName={paymentModal.vendorName}
+      />
     </div>
   );
 }
-

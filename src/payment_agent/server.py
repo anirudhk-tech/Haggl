@@ -65,7 +65,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3001",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
         os.getenv("NEXT_PUBLIC_APP_URL", "http://localhost:3000"),
     ],
     allow_credentials=True,
@@ -82,6 +84,7 @@ class AuthorizeRequest(BaseModel):
     """Request to authorize a payment."""
     invoice_id: str = Field(description="Unique invoice ID")
     vendor_name: str = Field(description="Vendor name")
+    vendor_id: Optional[str] = Field(default=None, description="Vendor ID")
     amount_usd: float = Field(description="Amount in USD")
     budget_total: float = Field(description="Total budget for this session")
     budget_remaining: float = Field(description="Remaining budget")
